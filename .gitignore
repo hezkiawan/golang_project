@@ -1,0 +1,18 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# Go build output
+*.exe
+/bin/
+
+# Node / Next.js (frontend/.gitignore covers these too)
+node_modules/
+.next/
+
+# OS / editor
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/

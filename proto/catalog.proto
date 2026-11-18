@@ -1,0 +1,97 @@
+// Defines which version of Protocol Buffers syntax we use.
+syntax = "proto3";
+
+
+// Protobuf namespace.
+// Used to organize protobuf definitions and prevent naming conflicts.
+// IMPORTANT: This is NOT the Go package name.
+// It exists only inside the protobuf world.
+package catalog;
+
+
+// Tells protoc how to generate Go code.
+//
+// Format:
+// option go_package = "go_import_path;go_package_name";
+//
+// First part:
+// "golang-microservice-practice/to/proto"
+// -> The Go import path where generated code belongs.
+// Usually matches the module path from go.mod.
+//
+// Second part:
+// "catalogpb"
+// -> The generated Go package name.
+//
+// Example usage after generation:
+// import "golang-microservice-practice/to/proto"
+// catalogpb.CheckServiceRequest{}
+option go_package = "golang-microservice-practice/to/proto;catalogpb";
+
+
+// Defines an RPC service (a group of functions that can be called remotely).
+//
+// In gRPC:
+// - The server implements this service.
+// - The client calls these methods.
+//
+// protoc will generate:
+// - CatalogServiceServer interface (for server)
+// - CatalogServiceClient interface (for client)
+service CatalogService {
+
+    // Defines an RPC method.
+    //
+    // Method name:
+    // CheckServiceExists
+    //
+    // Input:
+    // CheckServiceRequest message
+    //
+    // Output:
+    // CheckServiceResponse message
+    //
+    // Similar idea to a normal Go function:
+    //
+    // func CheckServiceExists(request CheckServiceRequest) CheckServiceResponse
+    rpc CheckServiceExists(CheckServiceRequest) returns (CheckServiceResponse);
+}
+
+
+// Defines the request data sent from client -> server.
+//
+// This is similar to a Go struct.
+//
+// Generated Go code:
+// type CheckServiceRequest struct {
+//     ServiceId int64
+// }
+message CheckServiceRequest {
+
+    // Field:
+    // service_id -> field name
+    // int64      -> data type
+    // 1          -> protobuf field number/tag
+    //
+    // Field numbers are used internally in binary serialization.
+    // They must be unique inside this message.
+    //
+    // They are NOT array indexes.
+    int64 service_id = 1;
+}
+
+
+// Defines the response data sent from server -> client.
+//
+// Generated Go code:
+// type CheckServiceResponse struct {
+//     Exists bool
+// }
+message CheckServiceResponse {
+
+    // Returns whether the service exists or not.
+    //
+    // bool -> Go bool
+    // 1    -> protobuf field number/tag
+    bool exists = 1;
+}

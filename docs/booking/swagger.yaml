@@ -1,0 +1,185 @@
+basePath: /
+definitions:
+  booking.AdminBooking:
+    properties:
+      booking_date:
+        type: string
+      id:
+        type: integer
+      service_id:
+        type: integer
+      service_name:
+        type: string
+      status:
+        type: string
+      user_id:
+        type: integer
+      username:
+        type: string
+    type: object
+  booking.AdminBookingPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/booking.AdminBooking'
+        type: array
+      limit:
+        type: integer
+      page:
+        type: integer
+      total:
+        type: integer
+    type: object
+  booking.Booking:
+    properties:
+      booking_date:
+        description: '"2026-11-05" date dijadiin string dari postgres'
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      service_id:
+        type: integer
+      status:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  booking.BookingRequest:
+    properties:
+      booking_date:
+        description: client sends "YYYY-MM-DD"
+        type: string
+      service_id:
+        type: integer
+    type: object
+  booking.ErrorResponse:
+    properties:
+      error:
+        type: string
+      message:
+        type: string
+    type: object
+host: localhost:3001
+info:
+  contact: {}
+  description: |-
+    Bookings: create, confirm/cancel, availability and the admin bookings table.
+    Auth: log in at POST /auth/login (user service). The browser then sends the jwt cookie automatically.
+  title: HomeFix Booking Service API
+  version: "1.0"
+paths:
+  /bookings:
+    get:
+      description: One page of bookings with user and service names. All filters combine
+        with AND. Admin only.
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: Rows per page (max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Sort column
+        enum:
+        - booking_date
+        - status
+        - created_at
+        - username
+        - service_name
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - description: Comma-separated statuses, e.g. pending,confirmed
+        in: query
+        name: status
+        type: string
+      - description: Only this date (YYYY-MM-DD)
+        in: query
+        name: date
+        type: string
+      - description: Search in the user's name
+        in: query
+        name: username
+        type: string
+      - description: Search in the service's name
+        in: query
+        name: service
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/booking.AdminBookingPage'
+        "400":
+          description: date is not YYYY-MM-DD
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "403":
+          description: not an admin
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+      summary: List all bookings (admin table)
+      tags:
+      - bookings
+    post:
+      consumes:
+      - application/json
+      description: Creates a pending booking. One service can have only one active
+        booking per date. Admins cannot book.
+      parameters:
+      - description: Service and date
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/booking.BookingRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/booking.Booking'
+        "400":
+          description: invalid or past date
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "403":
+          description: admins cannot create bookings
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "409":
+          description: already booked on that date
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+      summary: Book a service for a date
+      tags:
+      - bookings
+swagger: "2.0"
