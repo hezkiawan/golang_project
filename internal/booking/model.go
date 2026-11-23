@@ -24,6 +24,18 @@ type AdminBooking struct {
 	Status      string `json:"status"`
 }
 
+// GET /bookings/:id: one booking with the names, for the detail page
+type BookingDetail struct {
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"user_id"`
+	Username    string    `json:"username"`
+	ServiceID   int64     `json:"service_id"`
+	ServiceName string    `json:"service_name"`
+	BookingDate string    `json:"booking_date"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 type BookingRequest struct {
 	ServiceID   int64  `json:"service_id"`
 	BookingDate string `json:"booking_date"` // client sends "YYYY-MM-DD"

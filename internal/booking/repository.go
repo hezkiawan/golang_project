@@ -40,6 +40,7 @@ func NewBookingRepository(db *pgxpool.Pool) *BookingRepository {
 // custom error buat handler
 var ErrAlreadyBooked = errors.New("this service is already booked on that date")
 var ErrNotAllowed = errors.New("booking not found or this status change is not allowed")
+var ErrNotFound = errors.New("booking not found")
 
 // the FROM + JOINs, shared by the COUNT and the page query
 const adminBookingsFrom = `
@@ -186,16 +187,16 @@ func (r *BookingRepository) CreateBooking(serviceId int64, userId int64, date ti
 	return b, err
 }
 
-// pending -> confirmed
-func (r *BookingRepository) ConfirmBooking(id int64, userId int64) (Booking, error) {
+// pending -> confirmed. Admin only (checked in routes.go), so any user's booking can be confirmed
+func (r *BookingRepository) ConfirmBooking(ctx context.Context, id int64) (Booking, error) {
 	var b Booking
 
-	err := r.DB.QueryRow(context.Background(),
-		"UPDATE bookings SET status = 'confirmed' WHERE id = $1 AND user_id = $2 AND status = 'pending' RETURNING id, service_id, user_id, booking_date::text, status, created_at",
-		id, userId,
+	err := r.DB.QueryRow(ctx,
+		"UPDATE bookings SET status = 'confirmed' WHERE id = $1 AND status = 'pending' RETURNING "+bookingColumns,
+		id,
 	).Scan(&b.ID, &b.ServiceID, &b.UserID, &b.BookingDate, &b.Status, &b.CreatedAt)
 
-	// ga ada row berarti WHERE didn't match / not found, not yours, not pending
+	// ga ada row berarti WHERE didn't match / not found or not pending
 	if errors.Is(err, pgx.ErrNoRows) {
 		return b, ErrNotAllowed
 	}
@@ -203,20 +204,59 @@ func (r *BookingRepository) ConfirmBooking(id int64, userId int64) (Booking, err
 	return b, err
 }
 
-// pending -> cancelled OR confirmed -> cancelled
-func (r *BookingRepository) CancelBooking(id int64, userId int64) (Booking, error) {
+// pending -> rejected. Admin only (checked in routes.go)
+func (r *BookingRepository) RejectBooking(ctx context.Context, id int64) (Booking, error) {
 	var b Booking
 
-	err := r.DB.QueryRow(context.Background(),
-		"UPDATE bookings SET status = 'cancelled' WHERE id = $1 AND user_id = $2 AND status IN ('pending', 'confirmed') RETURNING id, service_id, user_id, booking_date::text, status, created_at",
-		id, userId,
+	err := r.DB.QueryRow(ctx,
+		"UPDATE bookings SET status = 'rejected' WHERE id = $1 AND status = 'pending' RETURNING "+bookingColumns,
+		id,
 	).Scan(&b.ID, &b.ServiceID, &b.UserID, &b.BookingDate, &b.Status, &b.CreatedAt)
 
+	// no row: not found, or already confirmed/cancelled/rejected
 	if errors.Is(err, pgx.ErrNoRows) {
 		return b, ErrNotAllowed
 	}
 
 	return b, err
+}
+
+// pending -> cancelled. Only the owner, and only while it is still pending
+// (once an admin confirmed it, the user can't cancel it anymore)
+func (r *BookingRepository) CancelBooking(ctx context.Context, id int64, userId int64) (Booking, error) {
+	var b Booking
+
+	err := r.DB.QueryRow(ctx,
+		"UPDATE bookings SET status = 'cancelled' WHERE id = $1 AND user_id = $2 AND status = 'pending' RETURNING "+bookingColumns,
+		id, userId,
+	).Scan(&b.ID, &b.ServiceID, &b.UserID, &b.BookingDate, &b.Status, &b.CreatedAt)
+
+	// no row: not found, not yours, or not pending anymore
+	if errors.Is(err, pgx.ErrNoRows) {
+		return b, ErrNotAllowed
+	}
+
+	return b, err
+}
+
+// one booking with the user's and service's names (same JOIN as the admin table)
+func (r *BookingRepository) GetBookingByID(ctx context.Context, id int64) (BookingDetail, error) {
+	var d BookingDetail
+
+	err := r.DB.QueryRow(ctx,
+		`SELECT b.id, b.user_id, COALESCE(u.username, '(deleted user)'),
+		        b.service_id, COALESCE(s.name, '(deleted service)'),
+		        b.booking_date::text, b.status, b.created_at
+		`+adminBookingsFrom+`
+		WHERE b.id = $1`,
+		id,
+	).Scan(&d.ID, &d.UserID, &d.Username, &d.ServiceID, &d.ServiceName, &d.BookingDate, &d.Status, &d.CreatedAt)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return d, ErrNotFound
+	}
+
+	return d, err
 }
 
 // returns ids of services that already have an active booking on this date

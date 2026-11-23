@@ -125,7 +125,7 @@ func (h *BookingHandler) CreateBooking(c fiber.Ctx) error {
 // @Param        limit     query  int     false  "Rows per page (max 100)"   default(10)
 // @Param        sort      query  string  false  "Sort column"   Enums(booking_date, status, created_at, username, service_name)
 // @Param        order     query  string  false  "Sort direction"  Enums(asc, desc)
-// @Param        status    query  string  false  "Comma-separated statuses, e.g. pending,confirmed"
+// @Param        status    query  string  false  "Comma-separated statuses (pending, confirmed, cancelled, rejected), e.g. pending,confirmed"
 // @Param        date      query  string  false  "Only this date (YYYY-MM-DD)"
 // @Param        username  query  string  false  "Search in the user's name"
 // @Param        service   query  string  false  "Search in the service's name"
@@ -170,7 +170,7 @@ func (h *BookingHandler) GetBookings(c fiber.Ctx) error {
 
 	// status filter: ?status=pending,confirmed
 	statuses := []string{}
-	allowed := map[string]bool{"pending": true, "confirmed": true, "cancelled": true}
+	allowed := map[string]bool{"pending": true, "confirmed": true, "cancelled": true, "rejected": true}
 	for _, s := range strings.Split(c.Query("status"), ",") {
 		s = strings.TrimSpace(s)
 		if allowed[s] {
@@ -218,6 +218,54 @@ func (h *BookingHandler) GetMyBookings(c fiber.Ctx) error {
 	return c.JSON(bookingList)
 }
 
+// GetBookingByID godoc
+// @Summary      One booking (detail page)
+// @Description  A booking with the user's and service's names. Admins can see any booking; a user only their own (otherwise 404, so we don't reveal that it exists).
+// @Tags         bookings
+// @Produce      json
+// @Param        id   path      int  true  "Booking id"
+// @Success      200  {object}  BookingDetail
+// @Failure      400  {object}  ErrorResponse  "invalid booking id"
+// @Failure      401  {object}  ErrorResponse  "not logged in"
+// @Failure      404  {object}  ErrorResponse  "not found (or not yours)"
+// @Router       /bookings/{id} [get]
+func (h *BookingHandler) GetBookingByID(c fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid booking id"})
+	}
+
+	d, err := h.Repo.GetBookingByID(c.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": err.Error()})
+	}
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "database error"})
+	}
+
+	// a normal user may only see their own booking.
+	// 404 instead of 403: a 403 would tell them "this booking exists"
+	userID := c.Locals("userId").(int64)
+	role, _ := c.Locals("role").(string)
+	if role != "admin" && d.UserID != userID {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": ErrNotFound.Error()})
+	}
+
+	return c.JSON(d)
+}
+
+// ConfirmBooking godoc
+// @Summary      Approve a booking (admin)
+// @Description  pending → confirmed. Admin only. Any other status gives 409.
+// @Tags         bookings
+// @Produce      json
+// @Param        id   path      int  true  "Booking id"
+// @Success      200  {object}  Booking
+// @Failure      400  {object}  ErrorResponse  "invalid booking id"
+// @Failure      401  {object}  ErrorResponse  "not logged in"
+// @Failure      403  {object}  ErrorResponse  "not an admin"
+// @Failure      409  {object}  ErrorResponse  "not found or not pending"
+// @Router       /bookings/{id}/confirm [post]
 func (h *BookingHandler) ConfirmBooking(c fiber.Ctx) error {
 	// get :id from url and convert string -> int64
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
@@ -225,19 +273,57 @@ func (h *BookingHandler) ConfirmBooking(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid booking id"})
 	}
 
-	userID := c.Locals("userId").(int64)
-
-	b, err := h.Repo.ConfirmBooking(id, userID)
+	b, err := h.Repo.ConfirmBooking(c.Context(), id)
 	if errors.Is(err, ErrNotAllowed) {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
 	}
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "database error"})
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "database error"})
 	}
 
 	return c.JSON(b)
 }
 
+// RejectBooking godoc
+// @Summary      Reject a booking (admin)
+// @Description  pending → rejected. Admin only. Any other status gives 409. A rejected booking frees the date.
+// @Tags         bookings
+// @Produce      json
+// @Param        id   path      int  true  "Booking id"
+// @Success      200  {object}  Booking
+// @Failure      400  {object}  ErrorResponse  "invalid booking id"
+// @Failure      401  {object}  ErrorResponse  "not logged in"
+// @Failure      403  {object}  ErrorResponse  "not an admin"
+// @Failure      409  {object}  ErrorResponse  "not found or not pending"
+// @Router       /bookings/{id}/reject [post]
+func (h *BookingHandler) RejectBooking(c fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid booking id"})
+	}
+
+	b, err := h.Repo.RejectBooking(c.Context(), id)
+	if errors.Is(err, ErrNotAllowed) {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
+	}
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "database error"})
+	}
+
+	return c.JSON(b)
+}
+
+// CancelBooking godoc
+// @Summary      Cancel my booking
+// @Description  pending → cancelled. Only the owner, and only while pending. Confirmed, rejected or someone else's booking gives 409.
+// @Tags         bookings
+// @Produce      json
+// @Param        id   path      int  true  "Booking id"
+// @Success      200  {object}  Booking
+// @Failure      400  {object}  ErrorResponse  "invalid booking id"
+// @Failure      401  {object}  ErrorResponse  "not logged in"
+// @Failure      409  {object}  ErrorResponse  "not found, not yours, or not pending"
+// @Router       /bookings/{id}/cancel [post]
 func (h *BookingHandler) CancelBooking(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
@@ -246,7 +332,7 @@ func (h *BookingHandler) CancelBooking(c fiber.Ctx) error {
 
 	userID := c.Locals("userId").(int64)
 
-	b, err := h.Repo.CancelBooking(id, userID)
+	b, err := h.Repo.CancelBooking(c.Context(), id, userID)
 	if errors.Is(err, ErrNotAllowed) {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{"error": err.Error()})
 	}

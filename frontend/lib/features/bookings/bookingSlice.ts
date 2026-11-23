@@ -48,8 +48,8 @@ export const fetchMyBookings = createAsyncThunk<Booking[], void, { rejectValue: 
     },
 );
 
-// one thunk for both actions: action is "confirm" or "cancel"
-export const changeBookingStatus = createAsyncThunk<Booking, { id: number; action: "confirm" | "cancel" }, { rejectValue: string }>(
+// a user can only cancel (approve/reject are admin actions on the detail page)
+export const changeBookingStatus = createAsyncThunk<Booking, { id: number; action: "cancel" }, { rejectValue: string }>(
     "bookings/changeStatus",
     async ({ id, action }, { rejectWithValue }) => {
         const res = await fetch("/api/bookings/" + id + "/" + action, { method: "POST" });

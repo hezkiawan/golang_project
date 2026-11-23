@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -43,9 +44,10 @@ export default function BookingsPage() {
 
     const showSkeleton = (loadStatus === "idle" || loadStatus === "loading") && bookings.length === 0;
 
-    async function handleChange(id: number, action: "confirm" | "cancel") {
+    // users can only cancel; approving/rejecting is the admin's job
+    async function handleCancel(id: number) {
         try {
-            const updated = await dispatch(changeBookingStatus({ id: id, action: action })).unwrap();
+            const updated = await dispatch(changeBookingStatus({ id: id, action: "cancel" })).unwrap();
             setMessage("Booking #" + id + " is now " + updated.status + ".");
         } catch (err) {
             setMessage(err as string); // Go's error text, e.g. not allowed
@@ -56,7 +58,7 @@ export default function BookingsPage() {
         <div>
             <div className="mb-6">
                 <h1 className="text-2xl font-semibold">My bookings</h1>
-                <p className="text-sm text-muted-foreground">Confirm a pending booking or cancel one you no longer need.</p>
+                <p className="text-sm text-muted-foreground">An admin approves or rejects each booking. You can cancel one while it is still pending.</p>
             </div>
 
             {message && <p className="mb-4 text-sm text-muted-foreground">{message}</p>}
@@ -91,20 +93,21 @@ export default function BookingsPage() {
                             bookings.map((b, i) => (
                                 <TableRow key={b.id}>
                                     <TableCell className="hidden sm:table-cell">{i + 1}</TableCell>
-                                    <TableCell className="font-medium">{b.service_name || getServiceName(b.service_id)}</TableCell>
+                                    <TableCell className="font-medium">
+                                        {/* the service name opens the detail page */}
+                                        <Link href={"/bookings/" + b.id} className="underline-offset-4 hover:underline">
+                                            {b.service_name || getServiceName(b.service_id)}
+                                        </Link>
+                                    </TableCell>
                                     <TableCell>{b.booking_date}</TableCell>
                                     <TableCell>
                                         <StatusBadge status={b.status} />
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex justify-end gap-2">
+                                            {/* same rule as the SQL: only a pending booking can be cancelled */}
                                             {b.status === "pending" && (
-                                                <Button disabled={updatingId === b.id} onClick={() => handleChange(b.id, "confirm")}>
-                                                    Confirm
-                                                </Button>
-                                            )}
-                                            {b.status !== "cancelled" && (
-                                                <Button size="sm" variant="outline" disabled={updatingId === b.id} onClick={() => handleChange(b.id, "cancel")}>
+                                                <Button size="sm" variant="outline" disabled={updatingId === b.id} onClick={() => handleCancel(b.id)}>
                                                     Cancel
                                                 </Button>
                                             )}

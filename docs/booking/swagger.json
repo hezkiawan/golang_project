@@ -59,7 +59,7 @@
                     },
                     {
                         "type": "string",
-                        "description": "Comma-separated statuses, e.g. pending,confirmed",
+                        "description": "Comma-separated statuses (pending, confirmed, cancelled, rejected), e.g. pending,confirmed",
                         "name": "status",
                         "in": "query"
                     },
@@ -171,6 +171,206 @@
                     }
                 }
             }
+        },
+        "/bookings/{id}": {
+            "get": {
+                "description": "A booking with the user's and service's names. Admins can see any booking; a user only their own (otherwise 404, so we don't reveal that it exists).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bookings"
+                ],
+                "summary": "One booking (detail page)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Booking id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/booking.BookingDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid booking id",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "not logged in",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "not found (or not yours)",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bookings/{id}/cancel": {
+            "post": {
+                "description": "pending → cancelled. Only the owner, and only while pending. Confirmed, rejected or someone else's booking gives 409.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bookings"
+                ],
+                "summary": "Cancel my booking",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Booking id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/booking.Booking"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid booking id",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "not logged in",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "not found, not yours, or not pending",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bookings/{id}/confirm": {
+            "post": {
+                "description": "pending → confirmed. Admin only. Any other status gives 409.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bookings"
+                ],
+                "summary": "Approve a booking (admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Booking id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/booking.Booking"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid booking id",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "not logged in",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "not found or not pending",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bookings/{id}/reject": {
+            "post": {
+                "description": "pending → rejected. Admin only. Any other status gives 409. A rejected booking frees the date.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bookings"
+                ],
+                "summary": "Reject a booking (admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Booking id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/booking.Booking"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid booking id",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "not logged in",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "not an admin",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "not found or not pending",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -236,11 +436,44 @@
                 "service_id": {
                     "type": "integer"
                 },
+                "service_name": {
+                    "description": "only filled by GetBookingsByUser (JOIN on services), so a deleted service still shows its name.\nomitempty: other responses (create, confirm, cancel) just leave it out",
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
                 "user_id": {
                     "type": "integer"
+                }
+            }
+        },
+        "booking.BookingDetail": {
+            "type": "object",
+            "properties": {
+                "booking_date": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "service_id": {
+                    "type": "integer"
+                },
+                "service_name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                },
+                "username": {
+                    "type": "string"
                 }
             }
         },

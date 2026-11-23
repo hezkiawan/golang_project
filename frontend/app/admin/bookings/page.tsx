@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { StatusBadge } from "@/components/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -22,7 +23,7 @@ type AdminBooking = {
 };
 
 
-const STATUSES = ["pending", "confirmed", "cancelled"];
+const STATUSES = ["pending", "confirmed", "cancelled", "rejected"];
 
 export default function AdminBookingsPage() {
     // data from the server
@@ -176,7 +177,12 @@ export default function AdminBookingsPage() {
                                 <TableRow key={b.id}>
                                     <TableCell>{from + i}</TableCell>
                                     <TableCell className="font-medium">{b.username}</TableCell>
-                                    <TableCell>{b.service_id}</TableCell>
+                                    <TableCell>
+                                        {/* the service name opens the detail page (approve / reject) */}
+                                        <Link href={"/admin/bookings/" + b.id} className="underline-offset-4 hover:underline">
+                                            {b.service_name}
+                                        </Link>
+                                    </TableCell>
                                     <TableCell>{b.booking_date}</TableCell>
                                     <TableCell>
                                         <StatusBadge status={b.status} />
