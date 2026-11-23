@@ -41,20 +41,29 @@ export default function HomePage() {
       return;
     }
 
-    let ignore = false
-    setCheckingAvailability(true)
+    // lets the cleanup cancel the request for an old date
+    const controller = new AbortController();
+    setCheckingAvailability(true);
 
-    fetch("/api/bookings/availability?date=" + date).then(async (res) => {
-      if (ignore) return; // an answer for an old date: throw it away
-      if (!res.ok) return;
-      const data = await res.json();
-      setBookedIds(data.booked_service_ids);
-      setCheckingAvailability(false)
-    });
+    async function loadAvailability() {
+      try {
+        const res = await fetch("/api/bookings/availability?date=" + date, { signal: controller.signal });
+        if (res.ok) {
+          const data = await res.json();
+          setBookedIds(data.booked_service_ids ?? []);
+        }
+        setCheckingAvailability(false); // also on an error status, so the spinner stops
+      } catch (err) {
+        // we cancelled the request for an old date ourselves: ignore it
+        if (err instanceof Error && err.name === "AbortError") return;
+        setCheckingAvailability(false);
+      }
+    }
+    loadAvailability();
 
     // cleanup: React runs this when date changes again (or the page closes)
     return () => {
-      ignore = true;
+      controller.abort();
     };
   }, [date]);
 

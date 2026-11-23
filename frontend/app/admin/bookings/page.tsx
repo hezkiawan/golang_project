@@ -46,7 +46,8 @@ export default function AdminBookingsPage() {
 
     // the table: every time a control changes
     useEffect(() => {
-        let ignore = false;
+        // lets the cleanup cancel this request if the filters change before it finishes
+        const controller = new AbortController();
         setLoading(true);
 
         const params = new URLSearchParams({ page: String(page), limit: String(limit) });
@@ -60,20 +61,26 @@ export default function AdminBookingsPage() {
         if (debouncedUser.trim() !== "") params.set("username", debouncedUser.trim());
         if (debouncedService.trim() !== "") params.set("service", debouncedService.trim());
 
-        fetch("/api/bookings?" + params.toString()).then(async (res) => {
-            if (ignore) return;
-            if (res.ok) {
-                const data = await res.json();
-                if (!ignore) {
+        async function loadBookings() {
+            try {
+                const res = await fetch("/api/bookings?" + params.toString(), { signal: controller.signal });
+                if (res.ok) {
+                    const data = await res.json(); // also cancelled by the signal
                     setBookings(data.data ?? []);
                     setTotal(data.total ?? 0);
                 }
+                setLoading(false);
+            } catch (err) {
+                // we cancelled this request ourselves: a newer one is already running
+                if (err instanceof Error && err.name === "AbortError") return;
+                setLoading(false); // a real network error: don't leave the skeleton forever
             }
-            setLoading(false);
-        });
+        }
+        loadBookings();
 
+        // cleanup: React runs this when a filter changes (or the page closes)
         return () => {
-            ignore = true;
+            controller.abort();
         };
     }, [page, limit, sort, order, statuses, date, debouncedUser, debouncedService]);
 

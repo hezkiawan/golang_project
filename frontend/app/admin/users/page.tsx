@@ -68,7 +68,8 @@ export default function AdminUsersPage() {
     }
 
     useEffect(() => {
-        let ignore = false; // same pattern as availability: drop answers for an old page
+        // lets the cleanup cancel this request if the filters change before it finishes
+        const controller = new AbortController();
         setLoading(true);
 
         const params = new URLSearchParams({
@@ -85,20 +86,26 @@ export default function AdminUsersPage() {
 
         if (roles.length < 2) params.set("role", roles.join(",")); // only send it when something is unticked
 
-        fetch("/api/users?" + params.toString()).then(async (res) => {
-            if (ignore) return;
-            if (res.ok) {
-                const data = await res.json();
-                if (!ignore) {
-                    setUsers(data.data);
-                    setTotal(data.total);
+        async function loadUsers() {
+            try {
+                const res = await fetch("/api/users?" + params.toString(), { signal: controller.signal });
+                if (res.ok) {
+                    const data = await res.json(); // also cancelled by the signal
+                    setUsers(data.data ?? []);
+                    setTotal(data.total ?? 0);
                 }
+                setLoading(false);
+            } catch (err) {
+                // we cancelled this request ourselves: a newer one is already running
+                if (err instanceof Error && err.name === "AbortError") return;
+                setLoading(false); // a real network error: don't leave the skeleton forever
             }
-            setLoading(false);
-        });
+        }
+        loadUsers();
 
+        // cleanup: React runs this when a filter changes (or the page closes)
         return () => {
-            ignore = true;
+            controller.abort();
         };
     }, [page, limit, sort, order, debouncedGlobal, debouncedUsername, debouncedEmail, roles]);
 
