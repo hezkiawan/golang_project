@@ -1,5 +1,8 @@
 import { Badge } from "@/components/ui/badge";
 
+// every booking status, in the order the status filters show them (same list as the Go whitelist)
+export const BOOKING_STATUSES = ["pending", "confirmed", "cancelled", "rejected"];
+
 // colored badge per booking status, used by My Bookings, Admin Bookings and the detail page
 export function StatusBadge({ status }: { status: string }) {
     if (status === "confirmed") {

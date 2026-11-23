@@ -137,17 +137,7 @@ func (h *BookingHandler) CreateBooking(c fiber.Ctx) error {
 // @Router       /bookings [get]
 func (h *BookingHandler) GetBookings(c fiber.Ctx) error {
 	// pagination
-	page, err := strconv.Atoi(c.Query("page", "1"))
-	if err != nil || page < 1 {
-		page = 1
-	}
-	limit, err := strconv.Atoi(c.Query("limit", "10"))
-	if err != nil || limit < 1 {
-		limit = 10
-	}
-	if limit > 100 {
-		limit = 100
-	}
+	page, limit := parsePageLimit(c)
 
 	// sort whitelist
 	sortColumns := map[string]string{
@@ -169,14 +159,7 @@ func (h *BookingHandler) GetBookings(c fiber.Ctx) error {
 	}
 
 	// status filter: ?status=pending,confirmed
-	statuses := []string{}
-	allowed := map[string]bool{"pending": true, "confirmed": true, "cancelled": true, "rejected": true}
-	for _, s := range strings.Split(c.Query("status"), ",") {
-		s = strings.TrimSpace(s)
-		if allowed[s] {
-			statuses = append(statuses, s)
-		}
-	}
+	statuses := parseStatuses(c)
 
 	// date filter: ?date=2026-11-20
 	var date *time.Time // nil = no filter
@@ -207,15 +190,87 @@ func (h *BookingHandler) GetBookings(c fiber.Ctx) error {
 	return c.JSON(AdminBookingPage{Data: list, Total: total, Page: page, Limit: limit})
 }
 
+// GetMyBookings godoc
+// @Summary      List my bookings (My Bookings table)
+// @Description  One page of the logged-in user's bookings, with the service name. Default order: booking date, newest first.
+// @Tags         bookings
+// @Produce      json
+// @Param        page    query  int     false  "Page number"              default(1)
+// @Param        limit   query  int     false  "Rows per page (max 100)"  default(10)
+// @Param        sort    query  string  false  "Sort column"  Enums(booking_date, service_name, status, created_at)
+// @Param        order   query  string  false  "Sort direction"  Enums(asc, desc)
+// @Param        status  query  string  false  "Comma-separated statuses (pending, confirmed, cancelled, rejected)"
+// @Success      200  {object}  MyBookingPage
+// @Failure      401  {object}  ErrorResponse  "not logged in"
+// @Failure      500  {object}  ErrorResponse
+// @Router       /bookings/me [get]
 func (h *BookingHandler) GetMyBookings(c fiber.Ctx) error {
 	userID := c.Locals("userId").(int64)
 
-	bookingList, err := h.Repo.GetBookingsByUser(userID)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "database error"})
+	page, limit := parsePageLimit(c)
+
+	// sort whitelist: only these columns can ever reach the SQL
+	sortColumns := map[string]string{
+		"booking_date": "b.booking_date",
+		"service_name": "s.name",
+		"status":       "b.status",
+		"created_at":   "b.created_at",
 	}
 
-	return c.JSON(bookingList)
+	// default: booking date, newest first
+	sortCol, ok := sortColumns[c.Query("sort")]
+	order := strings.ToLower(c.Query("order"))
+	if !ok {
+		sortCol = "b.booking_date"
+		order = "desc"
+	}
+	if order != "asc" && order != "desc" {
+		order = "desc"
+	}
+
+	list, total, err := h.Repo.GetMyBookingsPage(c.Context(), userID, BookingFilter{
+		Page:     page,
+		Limit:    limit,
+		Sort:     sortCol,
+		Order:    order,
+		Statuses: parseStatuses(c),
+	})
+	if err != nil {
+		log.Println("GetMyBookingsPage:", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "database error"})
+	}
+
+	return c.JSON(MyBookingPage{Data: list, Total: total, Page: page, Limit: limit})
+}
+
+// ?page=2&limit=25 → (2, 25). Bad or missing values fall back to page 1 and 10 rows; max 100 rows
+func parsePageLimit(c fiber.Ctx) (int, int) {
+	page, err := strconv.Atoi(c.Query("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	limit, err := strconv.Atoi(c.Query("limit", "10"))
+	if err != nil || limit < 1 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	return page, limit
+}
+
+// ?status=pending,rejected → ["pending", "rejected"]. Unknown values are dropped (whitelist)
+func parseStatuses(c fiber.Ctx) []string {
+	allowed := map[string]bool{"pending": true, "confirmed": true, "cancelled": true, "rejected": true}
+
+	statuses := []string{}
+	for _, s := range strings.Split(c.Query("status"), ",") {
+		s = strings.TrimSpace(s)
+		if allowed[s] {
+			statuses = append(statuses, s)
+		}
+	}
+	return statuses
 }
 
 // GetBookingByID godoc

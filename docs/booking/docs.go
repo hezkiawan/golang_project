@@ -178,6 +178,82 @@ const docTemplate = `{
                 }
             }
         },
+        "/bookings/me": {
+            "get": {
+                "description": "One page of the logged-in user's bookings, with the service name. Default order: booking date, newest first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bookings"
+                ],
+                "summary": "List my bookings (My Bookings table)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "Rows per page (max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "booking_date",
+                            "service_name",
+                            "status",
+                            "created_at"
+                        ],
+                        "type": "string",
+                        "description": "Sort column",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "asc",
+                            "desc"
+                        ],
+                        "type": "string",
+                        "description": "Sort direction",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated statuses (pending, confirmed, cancelled, rejected)",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/booking.MyBookingPage"
+                        }
+                    },
+                    "401": {
+                        "description": "not logged in",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/bookings/{id}": {
             "get": {
                 "description": "A booking with the user's and service's names. Admins can see any booking; a user only their own (otherwise 404, so we don't reveal that it exists).",
@@ -443,7 +519,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "service_name": {
-                    "description": "only filled by GetBookingsByUser (JOIN on services), so a deleted service still shows its name.\nomitempty: other responses (create, confirm, cancel) just leave it out",
+                    "description": "only filled by GetMyBookingsPage (JOIN on services), so a deleted service still shows its name.\nomitempty: other responses (create, confirm, cancel) just leave it out",
                     "type": "string"
                 },
                 "status": {
@@ -503,6 +579,26 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string"
+                }
+            }
+        },
+        "booking.MyBookingPage": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/booking.Booking"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         }

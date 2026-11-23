@@ -9,7 +9,7 @@ type Booking struct {
 	BookingDate string    `json:"booking_date"` // "2026-11-05" date dijadiin string dari postgres
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
-	// only filled by GetBookingsByUser (JOIN on services), so a deleted service still shows its name.
+	// only filled by GetMyBookingsPage (JOIN on services), so a deleted service still shows its name.
 	// omitempty: other responses (create, confirm, cancel) just leave it out
 	ServiceName string `json:"service_name,omitempty"`
 }
@@ -54,6 +54,14 @@ type ErrorResponse struct {
 }
 
 // one page of the admin bookings table
+// GET /bookings/me: one page of my bookings
+type MyBookingPage struct {
+	Data  []Booking `json:"data"`
+	Total int       `json:"total"`
+	Page  int       `json:"page"`
+	Limit int       `json:"limit"`
+}
+
 type AdminBookingPage struct {
 	Data  []AdminBooking `json:"data"`
 	Total int            `json:"total"`

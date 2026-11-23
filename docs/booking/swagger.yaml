@@ -43,7 +43,7 @@ definitions:
         type: integer
       service_name:
         description: |-
-          only filled by GetBookingsByUser (JOIN on services), so a deleted service still shows its name.
+          only filled by GetMyBookingsPage (JOIN on services), so a deleted service still shows its name.
           omitempty: other responses (create, confirm, cancel) just leave it out
         type: string
       status:
@@ -84,6 +84,19 @@ definitions:
         type: string
       message:
         type: string
+    type: object
+  booking.MyBookingPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/booking.Booking'
+        type: array
+      limit:
+        type: integer
+      page:
+        type: integer
+      total:
+        type: integer
     type: object
 host: localhost:3001
 info:
@@ -341,6 +354,59 @@ paths:
           schema:
             $ref: '#/definitions/booking.ErrorResponse'
       summary: Reject a booking (admin)
+      tags:
+      - bookings
+  /bookings/me:
+    get:
+      description: 'One page of the logged-in user''s bookings, with the service name.
+        Default order: booking date, newest first.'
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: Rows per page (max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Sort column
+        enum:
+        - booking_date
+        - service_name
+        - status
+        - created_at
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - description: Comma-separated statuses (pending, confirmed, cancelled, rejected)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/booking.MyBookingPage'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+      summary: List my bookings (My Bookings table)
       tags:
       - bookings
 swagger: "2.0"

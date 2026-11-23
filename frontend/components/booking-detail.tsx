@@ -69,7 +69,8 @@ export function BookingDetail({ id, isAdmin }: { id: string; isAdmin: boolean })
                 const updated = await res.json();
                 // the answer has no names, so only take the new status
                 setBooking({ ...booking, status: updated.status });
-                setIsError(false);
+                // green only for approve; rejected / cancelled are shown in red so they stand out
+                setIsError(updated.status !== "confirmed");
                 setMessage("Booking is now " + updated.status + ".");
             } else {
                 // 409 = someone else changed it first (e.g. another admin)
