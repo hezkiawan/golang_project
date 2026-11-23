@@ -83,7 +83,7 @@ const servicesSlice = createSlice({
             })
             .addCase(addService.fulfilled, (state, action) => {
                 state.addStatus = "idle";
-                // state.items.push(action.payload); // add the new service to the list: no reload needed
+                state.items.push(action.payload); // add the new service to the list: no reload needed
             })
             .addCase(addService.rejected, (state, action) => {
                 state.addStatus = "failed";

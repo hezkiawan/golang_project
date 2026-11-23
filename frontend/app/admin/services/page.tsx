@@ -73,7 +73,7 @@ export default function AdminServicesPage() {
             setIsError(false);
             setMessage(`Service "${created.name}" added.`)
             setName("")
-            await dispatch(fetchServices()).unwrap
+            await dispatch(fetchServices()).unwrap()
         } catch (err) {
             setIsError(true);
             setMessage(err as string) // error from go 
@@ -146,4 +146,6 @@ export default function AdminServicesPage() {
 
         </div>
     );
+
+    
 }
