@@ -16,4 +16,8 @@ func CatalogRoutes(app *fiber.App, handler *CatalogHandler, secret []byte) {
 	// only admins can add a service: who are you? -> are you allowed? -> handler
 	app.Post("/services", auth, middleware.AdminOnly(), handler.CreateService)
 
+	// only admins can rename or delete one
+	app.Put("/services/:id", auth, middleware.AdminOnly(), handler.UpdateService)
+	app.Delete("/services/:id", auth, middleware.AdminOnly(), handler.DeleteService)
+
 }

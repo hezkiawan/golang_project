@@ -9,8 +9,8 @@ const nextConfig: NextConfig = {
         destination: "http://localhost:3003/auth/:path*", // user service
       },
       {
-        source: "/api/services",
-        destination: "http://localhost:3002/services", // catalog service
+        source: "/api/services/:path*", // /api/services and /api/services/5 (edit, delete)
+        destination: "http://localhost:3002/services/:path*", // catalog service
       },
       {
         source: "/api/usernames",

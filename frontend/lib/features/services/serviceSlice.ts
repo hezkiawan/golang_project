@@ -53,6 +53,37 @@ export const addService = createAsyncThunk<Service, string, { rejectValue: strin
     },
 );
 
+// rename a service. The page refetches the list afterwards (so changes by other admins show up too)
+export const updateService = createAsyncThunk<Service, { id: number; name: string }, { rejectValue: string }>(
+    "services/update",
+    async ({ id, name }, { rejectWithValue }) => {
+        const res = await fetch("/api/services/" + id, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: name }),
+        });
+        if (!res.ok) {
+            // 400 empty name, 403 not admin, 404 missing: Go sends {"error": "..."}
+            const data = await res.json().catch(() => ({}));
+            return rejectWithValue(data.error || "Could not update the service");
+        }
+        return (await res.json()) as Service;
+    },
+);
+
+// soft-delete a service. Go answers 204 (no body), so we only return the id
+export const deleteService = createAsyncThunk<number, number, { rejectValue: string }>(
+    "services/delete",
+    async (id, { rejectWithValue }) => {
+        const res = await fetch("/api/services/" + id, { method: "DELETE" });
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            return rejectWithValue(data.error || "Could not delete the service");
+        }
+        return id;
+    },
+);
+
 // ---- slice: how the state changes at each moment ----
 // extraReducers is a function that Redux Toolkit calls for you.
 // Redux Toolkit passes an object called builder into that function.

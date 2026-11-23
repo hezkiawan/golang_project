@@ -9,6 +9,9 @@ type Booking struct {
 	BookingDate string    `json:"booking_date"` // "2026-11-05" date dijadiin string dari postgres
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
+	// only filled by GetBookingsByUser (JOIN on services), so a deleted service still shows its name.
+	// omitempty: other responses (create, confirm, cancel) just leave it out
+	ServiceName string `json:"service_name,omitempty"`
 }
 
 type AdminBooking struct {

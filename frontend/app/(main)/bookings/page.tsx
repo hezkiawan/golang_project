@@ -91,7 +91,7 @@ export default function BookingsPage() {
                             bookings.map((b, i) => (
                                 <TableRow key={b.id}>
                                     <TableCell className="hidden sm:table-cell">{i + 1}</TableCell>
-                                    <TableCell className="font-medium">{getServiceName(b.service_id)}</TableCell>
+                                    <TableCell className="font-medium">{b.service_name || getServiceName(b.service_id)}</TableCell>
                                     <TableCell>{b.booking_date}</TableCell>
                                     <TableCell>
                                         <StatusBadge status={b.status} />

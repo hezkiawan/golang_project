@@ -5,15 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { RowsSkeleton, TableRowsSkeleton } from "@/components/loading-skeletons";
+import { TableRowsSkeleton } from "@/components/loading-skeletons";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
-import { addService, fetchServices } from "@/lib/features/services/serviceSlice";
-
-// same shape as the Service struct in internal/catalog/model.go
-type Service = {
-    id: number;
-    name: string;
-};
+import { addService, deleteService, fetchServices, updateService, type Service } from "@/lib/features/services/serviceSlice";
 
 export default function AdminServicesPage() {
     const dispatch = useAppDispatch();
@@ -23,68 +17,87 @@ export default function AdminServicesPage() {
     const loadStatus = useAppSelector((state) => state.services.loadStatus);
     const addStatus = useAppSelector((state) => state.services.addStatus);
 
-
     // LOCAL - ONLY IN THIS COMPONENT
     const [name, setName] = useState("");
     const [message, setMessage] = useState("");
     const [isError, setIsError] = useState(false);
-    // const [services, setServices] = useState<Service[]>([]); --> NO LONGER USED
-    // const [loading, setLoading] = useState(true); --> NO LONGER USED
 
-    // async function loadServices() {
-    //     const res = await fetch("/api/services");
-    //     if (res.ok) setServices(await res.json());
-    //     setLoading(false);
-    // } -- > MOVED TO REDUX
+    // inline edit: which row is being edited, and the text in its input
+    const [editingId, setEditingId] = useState<number | null>(null);
+    const [editName, setEditName] = useState("");
+    // which row is waiting for the server (save or delete), so only that row's buttons are disabled
+    const [busyId, setBusyId] = useState<number | null>(null);
 
     useEffect(() => {
-        // loadServices(); --> CHANGED TO USING REDUX
         dispatch(fetchServices());
     }, [dispatch]); //dispatch normally doesnt change but because you are using dispatch inside the useEffect
 
     //services.length == 0 cause the store survives page changes, so it shows instantly
     const showSkeleton = (loadStatus === "idle" || loadStatus === "loading") && services.length === 0;
 
+    function showResult(text: string, error: boolean) {
+        setIsError(error);
+        setMessage(text);
+    }
+
     async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
         e.preventDefault();
 
-        // const res = await fetch("/api/services", {
-        //     method: "POST",
-        //     headers: { "Content-Type": "application/json" },
-        //     body: JSON.stringify({ name: name }),
-        // });
-        // const data = await res.json();
-
-        // if (res.ok) {
-        //     setIsError(false);
-        //     setMessage('Service "' + data.name + '" added.');
-        //     setName(""); // clear the input for the next one
-        //     loadServices(); // refresh the table
-        // } else {
-        //     // 400 = empty name, 403 = not admin
-        //     setIsError(true);
-        //     setMessage(data.error || data.message);
-        // } --> MOVED TO REDUX
-
         try {
             // unwrap(): the new service on success, the rejectWithValue text on failure
-            // reducer di redux akan secara langsung add ke services sehinnga akan rerender after addding
             const created = await dispatch(addService(name)).unwrap();
-            setIsError(false);
-            setMessage(`Service "${created.name}" added.`)
-            setName("")
-            await dispatch(fetchServices()).unwrap()
+            showResult(`Service "${created.name}" added.`, false);
+            setName("");
+            await dispatch(fetchServices()).unwrap();
         } catch (err) {
-            setIsError(true);
-            setMessage(err as string) // error from go 
+            showResult(err as string, true); // error from go
         }
+    }
+
+    function startEdit(s: Service) {
+        setEditingId(s.id);
+        setEditName(s.name);
+    }
+
+    function cancelEdit() {
+        setEditingId(null);
+        setEditName("");
+    }
+
+    async function handleSave(id: number) {
+        setBusyId(id);
+        try {
+            const updated = await dispatch(updateService({ id: id, name: editName })).unwrap();
+            showResult(`Service renamed to "${updated.name}".`, false);
+            cancelEdit();
+            // refetch instead of patching the list: also picks up changes made by other admins
+            await dispatch(fetchServices()).unwrap();
+        } catch (err) {
+            showResult(err as string, true);
+        }
+        setBusyId(null);
+    }
+
+    async function handleDelete(s: Service) {
+        // a simple browser confirm is enough here: deleting is a soft delete
+        if (!window.confirm(`Delete "${s.name}"? Users can no longer book it. Old bookings keep its name.`)) return;
+
+        setBusyId(s.id);
+        try {
+            await dispatch(deleteService(s.id)).unwrap();
+            showResult(`Service "${s.name}" deleted.`, false);
+            await dispatch(fetchServices()).unwrap();
+        } catch (err) {
+            showResult(err as string, true);
+        }
+        setBusyId(null);
     }
 
     return (
         <div>
             <div className="mb-6">
                 <h1 className="text-2xl font-semibold">Services</h1>
-                <p className="text-sm text-muted-foreground">Add a new service that users can book.</p>
+                <p className="text-sm text-muted-foreground">Add, rename or delete the services that users can book.</p>
             </div>
 
             {/* input to add service */}
@@ -116,36 +129,78 @@ export default function AdminServicesPage() {
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead>#</TableHead>
+                            <TableHead className="hidden sm:table-cell">#</TableHead>
                             <TableHead>Name</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {showSkeleton ? (
-                            // 1. loading: placeholder rows, same 5 columns, # hidden on phones like the real one
-                            <TableRowsSkeleton columns={["hidden sm:table-cell", "", "", "", ""]} />
+                            // 1. loading: placeholder rows, same 3 columns, # hidden on phones like the real one
+                            <TableRowsSkeleton columns={["hidden sm:table-cell", "", ""]} />
                         ) : services.length === 0 ? (
+                            // 2. loaded but empty
                             <TableRow>
-                                <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                                    No bookings yet.
+                                <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">
+                                    No services yet.
                                 </TableCell>
                             </TableRow>
-                        ) :
-                            (
-                                services.map((s) => (
-                                    <TableRow key={s.id}>
-                                        <TableCell>{s.id}</TableCell>
-                                        <TableCell className="font-medium">{s.name}</TableCell>
-                                    </TableRow>
-                                ))
-                            )
-                        }
+                        ) : (
+                            // 3. loaded with data
+                            services.map((s) => (
+                                <TableRow key={s.id}>
+                                    <TableCell className="hidden sm:table-cell">{s.id}</TableCell>
+
+                                    {editingId === s.id ? (
+                                        // this row is being edited: input + Save / Cancel
+                                        <>
+                                            <TableCell>
+                                                <Input
+                                                    value={editName}
+                                                    onChange={(e) => setEditName(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Enter" && editName.trim() !== "") handleSave(s.id);
+                                                        if (e.key === "Escape") cancelEdit();
+                                                    }}
+                                                    aria-label="New service name"
+                                                    className="h-8 w-full sm:w-64"
+                                                    autoFocus
+                                                />
+                                            </TableCell>
+                                            <TableCell>
+                                                <div className="flex justify-end gap-2">
+                                                    <Button size="sm" disabled={busyId === s.id || editName.trim() === ""} onClick={() => handleSave(s.id)}>
+                                                        {busyId === s.id ? "Saving..." : "Save"}
+                                                    </Button>
+                                                    <Button size="sm" variant="outline" disabled={busyId === s.id} onClick={cancelEdit}>
+                                                        Cancel
+                                                    </Button>
+                                                </div>
+                                            </TableCell>
+                                        </>
+                                    ) : (
+                                        // normal row: name + Edit / Delete
+                                        <>
+                                            <TableCell className="font-medium">{s.name}</TableCell>
+                                            <TableCell>
+                                                <div className="flex justify-end gap-2">
+                                                    <Button size="sm" variant="outline" disabled={busyId === s.id} onClick={() => startEdit(s)}>
+                                                        Edit
+                                                    </Button>
+                                                    <Button size="sm" variant="destructive" disabled={busyId === s.id} onClick={() => handleDelete(s)}>
+                                                        {busyId === s.id ? "Deleting..." : "Delete"}
+                                                    </Button>
+                                                </div>
+                                            </TableCell>
+                                        </>
+                                    )}
+                                </TableRow>
+                            ))
+                        )}
                     </TableBody>
                 </Table>
             </div>
 
         </div>
     );
-
-    
 }

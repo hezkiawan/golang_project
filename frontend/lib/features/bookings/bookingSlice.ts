@@ -7,6 +7,7 @@ export type Booking = {
     booking_date: string;
     status: string;
     created_at: string;
+    service_name?: string; // only sent by GET /bookings/me (JOIN), so deleted services keep their name
 };
 
 type BookingsState = {
@@ -81,7 +82,8 @@ const bookingsSlice = createSlice({
                 state.updatingId = null;
                 // swap the old booking for the updated one: no need to reload the whole list
                 const i = state.items.findIndex((b) => b.id === action.payload.id);
-                if (i !== -1) state.items[i] = action.payload;
+                // merge, don't replace: the confirm/cancel answer has no service_name, so keep the old one
+                if (i !== -1) state.items[i] = { ...state.items[i], ...action.payload };
             })
             .addCase(changeBookingStatus.rejected, (state) => {
                 state.updatingId = null;

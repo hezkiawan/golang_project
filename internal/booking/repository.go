@@ -140,7 +140,12 @@ func (r *BookingRepository) GetBookings() ([]Booking, error) {
 // get only the bookings of one user (for "my bookings" page)
 func (r *BookingRepository) GetBookingsByUser(userId int64) ([]Booking, error) {
 	rows, err := r.DB.Query(context.Background(),
-		"SELECT id, service_id, user_id, booking_date::text, status, created_at FROM bookings WHERE user_id = $1 ORDER BY booking_date",
+		// LEFT JOIN: the name comes from the services table, even when the service is soft-deleted
+		`SELECT b.id, b.service_id, b.user_id, b.booking_date::text, b.status, b.created_at, COALESCE(s.name, '')
+		FROM bookings b
+		LEFT JOIN services s ON s.id = b.service_id
+		WHERE b.user_id = $1
+		ORDER BY b.booking_date`,
 		userId)
 	if err != nil {
 		return nil, err
@@ -150,7 +155,7 @@ func (r *BookingRepository) GetBookingsByUser(userId int64) ([]Booking, error) {
 	bookingList := []Booking{}
 	for rows.Next() {
 		var b Booking
-		if err := rows.Scan(&b.ID, &b.ServiceID, &b.UserID, &b.BookingDate, &b.Status, &b.CreatedAt); err != nil {
+		if err := rows.Scan(&b.ID, &b.ServiceID, &b.UserID, &b.BookingDate, &b.Status, &b.CreatedAt, &b.ServiceName); err != nil {
 			return nil, err
 		}
 		bookingList = append(bookingList, b)
