@@ -95,6 +95,20 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// second durable queue: an admin confirmed or rejected a booking → notify the user
+	_, err = channel.QueueDeclare(
+		"booking.reviewed",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	handler := &booking.BookingHandler{
 		Repo:          booking.NewBookingRepository(pool),
 		CatalogClient: catalog,

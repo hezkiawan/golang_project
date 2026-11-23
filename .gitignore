@@ -16,3 +16,6 @@ Thumbs.db
 .DS_Store
 .vscode/
 .idea/
+# Firebase / Google service-account keys: never commit them
+*firebase-adminsdk*.json
+*service-account*.json

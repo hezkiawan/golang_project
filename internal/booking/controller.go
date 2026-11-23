@@ -86,19 +86,39 @@ func (h *BookingHandler) CreateBooking(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// payload for event
-	payload, err := json.Marshal(BookingCreatedEvent{
-		BookingID: b.ID,
-		ServiceID: b.ServiceID,
-		UserID:    b.UserID,
-	})
-
 	// RABBIT MQ - PUB SUB
-	// we need to publish only after the row is saved
-	err = h.RabbitChannel.PublishWithContext(
-		context.Background(),
-		"",
-		"booking.created",
+	// we need to publish only after the row is saved.
+	// Load the names first (same JOIN as the detail page), so the event can carry them
+	d, err := h.Repo.GetBookingByID(c.Context(), b.ID)
+	if err == nil {
+		err = h.publishEvent(c.Context(), "booking.created", BookingCreatedEvent{
+			BookingID:   d.ID,
+			ServiceID:   d.ServiceID,
+			UserID:      d.UserID,
+			Username:    d.Username,
+			ServiceName: d.ServiceName,
+			BookingDate: d.BookingDate,
+		})
+	}
+	if err != nil {
+		log.Println("booking.created:", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "event publish failed"})
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(b)
+}
+
+// send one event (any struct, as JSON) to a RabbitMQ queue
+func (h *BookingHandler) publishEvent(ctx context.Context, queue string, event any) error {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+
+	return h.RabbitChannel.PublishWithContext(
+		ctx,
+		"",    // default exchange: the routing key is the queue name
+		queue, // e.g. "booking.created"
 		false,
 		false,
 		amqp.Publishing{
@@ -107,13 +127,24 @@ func (h *BookingHandler) CreateBooking(c fiber.Ctx) error {
 			Body:         payload,
 		},
 	)
+}
 
-	if err != nil {
-		log.Println(err)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "event publish failed"})
+// after an admin confirmed/rejected a booking: tell the notification service.
+// The status change is already saved, so a failure here is only logged (the admin's request still succeeds)
+func (h *BookingHandler) publishBookingReviewed(ctx context.Context, b Booking) {
+	d, err := h.Repo.GetBookingByID(ctx, b.ID)
+	if err == nil {
+		err = h.publishEvent(ctx, "booking.reviewed", BookingReviewedEvent{
+			BookingID:   d.ID,
+			UserID:      d.UserID,
+			ServiceName: d.ServiceName,
+			BookingDate: d.BookingDate,
+			Status:      d.Status,
+		})
 	}
-
-	return c.Status(fiber.StatusCreated).JSON(b)
+	if err != nil {
+		log.Println("booking.reviewed: could not publish for booking", b.ID, ":", err)
+	}
 }
 
 // GetBookings godoc
@@ -336,6 +367,8 @@ func (h *BookingHandler) ConfirmBooking(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "database error"})
 	}
 
+	h.publishBookingReviewed(c.Context(), b) // → "Booking approved" for the user
+
 	return c.JSON(b)
 }
 
@@ -364,6 +397,8 @@ func (h *BookingHandler) RejectBooking(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "database error"})
 	}
+
+	h.publishBookingReviewed(c.Context(), b) // → "Booking rejected" for the user
 
 	return c.JSON(b)
 }

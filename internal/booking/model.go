@@ -41,10 +41,24 @@ type BookingRequest struct {
 	BookingDate string `json:"booking_date"` // client sends "YYYY-MM-DD"
 }
 
+// sent on the "booking.created" queue. It carries the names too,
+// so the notification service can write "hezki booked AC Repair for 2026-11-25" without extra queries
 type BookingCreatedEvent struct {
-	BookingID int64 `json:"booking_id"`
-	ServiceID int64 `json:"service_id"`
-	UserID    int64 `json:"user_id"`
+	BookingID   int64  `json:"booking_id"`
+	ServiceID   int64  `json:"service_id"`
+	UserID      int64  `json:"user_id"`
+	Username    string `json:"username"`
+	ServiceName string `json:"service_name"`
+	BookingDate string `json:"booking_date"`
+}
+
+// sent on the "booking.reviewed" queue when an admin confirms or rejects a booking
+type BookingReviewedEvent struct {
+	BookingID   int64  `json:"booking_id"`
+	UserID      int64  `json:"user_id"` // who gets the notification
+	ServiceName string `json:"service_name"`
+	BookingDate string `json:"booking_date"`
+	Status      string `json:"status"` // "confirmed" or "rejected"
 }
 
 // error body returned by the handlers

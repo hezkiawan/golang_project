@@ -8,6 +8,7 @@ import (
 	"golang-microservice-practice/internal/middleware"
 	"golang-microservice-practice/internal/notification"
 
+	firebase "firebase.google.com/go/v4"
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -78,12 +79,43 @@ func main() {
 		log.Fatal(err)
 	}
 
-	consumer := notification.Consumer{
-		Channel: channel,
-		Repo:    repo, // was: DB: pool
+	// second queue: an admin confirmed or rejected a booking
+	_, err = channel.QueueDeclare(
+		"booking.reviewed",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	go consumer.Start()
+	// FIREBASE: the Admin SDK reads the service-account key from GOOGLE_APPLICATION_CREDENTIALS (set in .env).
+	// FIREBASE_PROJECT_ID makes the project explicit; if it is empty the SDK takes it from the key file
+	firebaseApp, err := firebase.NewApp(context.Background(), &firebase.Config{
+		ProjectID: os.Getenv("FIREBASE_PROJECT_ID"),
+	})
+	if err != nil {
+		log.Fatal("firebase init: ", err)
+	}
+
+	firestoreClient, err := firebaseApp.Firestore(context.Background())
+	if err != nil {
+		log.Fatal("firestore init: ", err)
+	}
+	defer firestoreClient.Close()
+
+	consumer := notification.Consumer{
+		Channel:   channel,
+		Repo:      repo, // was: DB: pool
+		Firestore: &notification.FirestoreStore{Client: firestoreClient},
+	}
+
+	// starts one listener per queue in the background
+	consumer.Start()
 
 	// fiber server for endpoint
 	app := fiber.New()
