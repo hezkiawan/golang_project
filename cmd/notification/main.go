@@ -89,6 +89,20 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// third queue: a user cancelled their booking
+	_, err = channel.QueueDeclare(
+		"booking.cancelled",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// FIREBASE: the Admin SDK reads the service-account key from GOOGLE_APPLICATION_CREDENTIALS (set in .env).
 	// FIREBASE_PROJECT_ID makes the project explicit; if it is empty the SDK takes it from the key file
 	firebaseApp, err := firebase.NewApp(context.Background(), &firebase.Config{

@@ -20,7 +20,7 @@ type FirestoreStore struct {
 func newNotificationDoc(recipientID int64, kind string, bookingID int64, title string, body string) map[string]any {
 	return map[string]any{
 		"recipientId": strconv.FormatInt(recipientID, 10), // a string, so it matches request.auth.uid in the rules
-		"type":        kind,                                // "booking_created" | "booking_reviewed"
+		"type":        kind,                                // "booking_created" | "booking_reviewed" | "booking_cancelled"
 		"bookingId":   bookingID,
 		"title":       title,
 		"body":        body,
@@ -70,4 +70,20 @@ func (s *FirestoreStore) NotifyUserBookingReviewed(ctx context.Context, e Bookin
 	docID := fmt.Sprintf("booking_reviewed_%d", e.BookingID)
 	doc := newNotificationDoc(e.UserID, "booking_reviewed", e.BookingID, title, body)
 	return s.createOnce(ctx, docID, doc)
+}
+
+// "booking.cancelled" → one document per admin, like booking.created.
+// A booking can only be cancelled once (it must be pending), so booking id + admin id is a unique doc id
+func (s *FirestoreStore) NotifyAdminsBookingCancelled(ctx context.Context, adminIDs []int64, e BookingCancelledEvent) error {
+	body := fmt.Sprintf("%s cancelled %s for %s", e.Username, e.ServiceName, e.BookingDate)
+
+	// one by one, for the same reason as NotifyAdminsBookingCreated
+	for _, adminID := range adminIDs {
+		docID := fmt.Sprintf("booking_cancelled_%d_%d", e.BookingID, adminID)
+		doc := newNotificationDoc(adminID, "booking_cancelled", e.BookingID, "Booking cancelled", body)
+		if err := s.createOnce(ctx, docID, doc); err != nil {
+			return err
+		}
+	}
+	return nil
 }
