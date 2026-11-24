@@ -1,0 +1,169 @@
+basePath: /
+definitions:
+  catalog.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  catalog.Service:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+  catalog.ServiceRequest:
+    properties:
+      name:
+        type: string
+    type: object
+host: localhost:3002
+info:
+  contact: {}
+  description: |-
+    Services list: anyone can read it, only admins can add, rename or delete.
+    Auth: log in at POST /auth/login (user service, port 3003). The browser then sends the jwt cookie automatically.
+    (The gRPC CheckServiceExists on port 50051 is not part of this HTTP API.)
+  title: HomeFix Catalog Service API
+  version: "1.0"
+paths:
+  /services:
+    get:
+      description: 'Auth: public (no login needed). All active services (deleted ones
+        are hidden).'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/catalog.Service'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+      summary: List services
+      tags:
+      - services
+    post:
+      consumes:
+      - application/json
+      description: 'Auth: admin only. Creates a new service with this name.'
+      parameters:
+      - description: Service name
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/catalog.ServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/catalog.Service'
+        "400":
+          description: name is required
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+        "403":
+          description: not an admin
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+      summary: Add a service (admin)
+      tags:
+      - services
+  /services/{id}:
+    delete:
+      description: 'Auth: admin only. Soft delete: the service disappears from the
+        list, but old bookings still show its name.'
+      parameters:
+      - description: Service id
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: deleted, no body
+        "400":
+          description: invalid service id
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+        "403":
+          description: not an admin
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+        "404":
+          description: service not found (or already deleted)
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+      summary: Delete a service (admin)
+      tags:
+      - services
+    put:
+      consumes:
+      - application/json
+      description: 'Auth: admin only. Changes the name of an active service.'
+      parameters:
+      - description: Service id
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: New name
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/catalog.ServiceRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/catalog.Service'
+        "400":
+          description: invalid service id or name is required
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+        "403":
+          description: not an admin
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+        "404":
+          description: service not found (or already deleted)
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/catalog.ErrorResponse'
+      summary: Rename a service (admin)
+      tags:
+      - services
+swagger: "2.0"

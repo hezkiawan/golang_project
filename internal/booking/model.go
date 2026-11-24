@@ -71,6 +71,11 @@ type BookingCancelledEvent struct {
 	BookingDate string `json:"booking_date"`
 }
 
+// GET /bookings/availability: services that are already taken on that date
+type AvailabilityResponse struct {
+	BookedServiceIDs []int64 `json:"booked_service_ids"`
+}
+
 // error body returned by the handlers
 type ErrorResponse struct {
 	Error   string `json:"error,omitempty"`

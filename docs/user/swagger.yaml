@@ -1,0 +1,329 @@
+basePath: /
+definitions:
+  user.ErrorResponse:
+    properties:
+      error:
+        type: string
+      message:
+        type: string
+    type: object
+  user.FirebaseTokenResponse:
+    properties:
+      token:
+        type: string
+    type: object
+  user.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    type: object
+  user.LoginResponse:
+    properties:
+      message:
+        type: string
+      role:
+        type: string
+    type: object
+  user.MessageResponse:
+    properties:
+      message:
+        type: string
+    type: object
+  user.RegisterRequest:
+    properties:
+      email:
+        type: string
+      password:
+        description: 8-72 characters
+        type: string
+      username:
+        type: string
+    type: object
+  user.User:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      role:
+        type: string
+      user_id:
+        type: integer
+      username:
+        type: string
+    type: object
+  user.UserPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/user.User'
+        type: array
+      limit:
+        type: integer
+      page:
+        type: integer
+      total:
+        type: integer
+    type: object
+  user.UserSummary:
+    properties:
+      email:
+        type: string
+      role:
+        type: string
+      user_id:
+        type: integer
+      username:
+        type: string
+    type: object
+host: localhost:3003
+info:
+  contact: {}
+  description: |-
+    Accounts: register, login/logout, "who am I", the Firebase token for the notification bell, and the admin user lists.
+    Auth: POST /auth/login sets the "jwt" HttpOnly cookie; the browser sends it automatically (also to the booking and catalog services).
+    No cookie → 401. Routes marked "admin only" give 403 to normal users.
+  title: HomeFix User Service API
+  version: "1.0"
+paths:
+  /auth/firebase-token:
+    get:
+      description: 'Auth: login required. A Firebase custom token whose uid is our
+        user id; the frontend passes it to signInWithCustomToken so it can read its
+        notifications from Firestore.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/user.FirebaseTokenResponse'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+        "500":
+          description: could not create firebase token
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+      summary: Firebase custom token
+      tags:
+      - auth
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: 'Auth: public. Checks email + password and sets the "jwt" HttpOnly
+        cookie (valid 24 hours). The other services read that cookie.'
+      parameters:
+      - description: Email and password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/user.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          headers:
+            Set-Cookie:
+              description: jwt=<token>; Path=/; HttpOnly
+              type: string
+          schema:
+            $ref: '#/definitions/user.LoginResponse'
+        "400":
+          description: body can't be parsed
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+        "401":
+          description: wrong email or password
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+      summary: Log in
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      description: 'Auth: login required. Clears the "jwt" cookie.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/user.MessageResponse'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+      summary: Log out
+      tags:
+      - auth
+  /auth/me:
+    get:
+      description: 'Auth: login required. The logged-in user''s profile. A valid cookie
+        for a deleted user also gives 401.'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/user.User'
+        "401":
+          description: not logged in, or user not found
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+      summary: Who am I
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: 'Auth: public. Creates a normal user (role "user"). Does not log
+        in: call POST /auth/login afterwards.'
+      parameters:
+      - description: Email, username and password (8-72 characters)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/user.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/user.User'
+        "400":
+          description: body can't be parsed, empty field, bad password length, or
+            email already used
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+      summary: Create an account
+      tags:
+      - auth
+  /usernames:
+    get:
+      description: 'Auth: admin only. Every user with id, username, email and role,
+        not paginated. (Responses may be slowed down by SLOW_MS.)'
+      parameters:
+      - description: Order by username
+        enum:
+        - asc
+        - desc
+        in: query
+        name: sort
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/user.UserSummary'
+            type: array
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+        "403":
+          description: not an admin
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+      summary: All users, short form (lookup list)
+      tags:
+      - users
+  /users:
+    get:
+      description: 'Auth: admin only. One page of users. All filters combine with
+        AND. (Responses may be slowed down by SLOW_MS, to test loading states.)'
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: Rows per page (max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Sort column
+        enum:
+        - username
+        - email
+        - role
+        - created_at
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - description: Comma-separated roles (admin, user), e.g. admin,user
+        in: query
+        name: role
+        type: string
+      - description: Search in the username
+        in: query
+        name: username
+        type: string
+      - description: Search in the email
+        in: query
+        name: email
+        type: string
+      - description: Search in username or email
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/user.UserPage'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+        "403":
+          description: not an admin
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/user.ErrorResponse'
+      summary: List users (admin table)
+      tags:
+      - users
+swagger: "2.0"
