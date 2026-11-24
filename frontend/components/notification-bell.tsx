@@ -23,8 +23,10 @@ import { useAppSelector } from "@/lib/hooks";
 import { firebaseAuth, firestoreDb } from "@/lib/firebase";
 import {
   browserNotificationsSupported,
+  readLastPopped,
   registerNotificationWorker,
   showBrowserNotification,
+  writeLastPopped,
 } from "@/lib/browser-notifications";
 import { cn } from "@/lib/utils";
 
@@ -38,8 +40,20 @@ type NotificationItem = {
   createdAt: Date | null;
 };
 
+// a new notification that may become a browser pop-up
+type FreshNotification = {
+  id: string;
+  bookingId: number;
+  title: string;
+  body: string;
+  createdAtMs: number;
+};
+
 // how many notifications one "page" adds to the list
 const PAGE_SIZE = 10;
+
+// more new notifications than this in one snapshot → one summary pop-up instead
+const BURST_LIMIT = 3;
 
 // a Firestore batch can hold at most 500 writes
 const BATCH_LIMIT = 500;
@@ -117,7 +131,8 @@ export default function NotificationBell() {
   const [permission, setPermission] = useState<BrowserPermission>("unsupported");
 
   // Newest createdAt (in ms) we have seen in the list during this session.
-  // null = the first snapshot has not arrived yet. Only documents NEWER than this value
+  // null = the first SERVER snapshot has not arrived yet (cache snapshots are ignored).
+  // Only documents NEWER than this value
   // are "genuinely new" (see the list listener below).
   const newestSeenRef = useRef<number | null>(null);
 
@@ -191,34 +206,7 @@ export default function NotificationBell() {
     const stopLatest = onSnapshot(
       latestQuery,
       (snapshot) => {
-        // Browser notifications, only for documents that are genuinely new:
-        // - the first snapshot of the session only remembers the newest createdAt;
-        // - "Load more" restarts this listener and older documents come in as "added"
-        //   too, but they are not newer than newestSeen, so they are skipped;
-        // - we compare Firestore timestamps with each other (not with Date.now()),
-        //   so a wrong clock on this computer does not matter.
-        // newestSeen also moves up while the tab is visible, so a notification we did
-        // not show then is not shown later after a restart.
-        const newestSeen = newestSeenRef.current;
-        let newest = newestSeen ?? 0;
-        for (const change of snapshot.docChanges()) {
-          if (change.type !== "added") {
-            continue;
-          }
-          const data = change.doc.data({ serverTimestamps: "estimate" });
-          const createdAtMs: number = data.createdAt ? data.createdAt.toMillis() : 0;
-          const isNew = newestSeen !== null && createdAtMs > newestSeen;
-          // tab visible → only the in-app bell, no browser notification
-          if (isNew && document.visibilityState === "hidden" && readBrowserPermission() === "granted") {
-            const path = bookingPath(isAdmin, data.bookingId);
-            showBrowserNotification(change.doc.id, data.title, data.body, `${path}?notification=${change.doc.id}`);
-          }
-          if (createdAtMs > newest) {
-            newest = createdAtMs;
-          }
-        }
-        newestSeenRef.current = newest;
-
+        // 1. The dropdown list: always updated, also from a cache snapshot
         const list: NotificationItem[] = snapshot.docs.slice(0, pageLimit).map((d) => {
           // "estimate" = never null, even while a server timestamp is still being written
           const data = d.data({ serverTimestamps: "estimate" });
@@ -234,6 +222,62 @@ export default function NotificationBell() {
         setItems(list);
         setHasMore(snapshot.size > pageLimit);
         setLoading(false);
+
+        // 2. Browser notifications, only for documents that are genuinely new.
+        // A snapshot from the local cache can be empty or incomplete (e.g. right after a full
+        // page load), so it tells us nothing about what is new. Only server snapshots count.
+        if (snapshot.metadata.fromCache) {
+          return;
+        }
+
+        // - The first server snapshot only sets the baseline (newestSeen): the newest createdAt
+        //   in it, or 0 when it is empty (the user really has no notifications yet).
+        // - After that, a document is new when it is newer than the baseline. We look at all
+        //   docs (not only docChanges), so a doc that first came in a skipped cache snapshot
+        //   is not missed. "Load more" brings older docs, which are below the baseline.
+        // - We compare Firestore timestamps with each other (not with Date.now()),
+        //   so a wrong clock on this computer does not matter.
+        // - The baseline also moves up while the tab is visible, so a notification we did
+        //   not show then is not shown later.
+        const newestSeen = newestSeenRef.current;
+        const lastPopped = readLastPopped(myUid); // shown before, maybe before a reload
+        let newest = newestSeen ?? 0;
+        const fresh: FreshNotification[] = [];
+        for (const d of snapshot.docs) {
+          const data = d.data({ serverTimestamps: "estimate" });
+          const createdAtMs: number = data.createdAt ? data.createdAt.toMillis() : 0;
+          if (createdAtMs > newest) {
+            newest = createdAtMs;
+          }
+          const isNew = newestSeen !== null && createdAtMs > newestSeen;
+          // already read (e.g. in another tab) or already popped up → never again
+          if (isNew && data.read !== true && createdAtMs > lastPopped) {
+            fresh.push({ id: d.id, bookingId: data.bookingId, title: data.title, body: data.body, createdAtMs });
+          }
+        }
+        newestSeenRef.current = newest;
+
+        // tab visible → only the in-app bell, no browser notification
+        if (fresh.length === 0 || document.visibilityState !== "hidden" || readBrowserPermission() !== "granted") {
+          return;
+        }
+
+        if (fresh.length > BURST_LIMIT) {
+          // many at once: one summary instead of a wall of pop-ups
+          showBrowserNotification(
+            "summary",
+            `You have ${fresh.length} new notifications`,
+            "Open your bookings to see them.",
+            isAdmin ? "/admin/bookings" : "/bookings"
+          );
+        } else {
+          for (const n of fresh) {
+            const path = bookingPath(isAdmin, n.bookingId);
+            showBrowserNotification(n.id, n.title, n.body, `${path}?notification=${n.id}`);
+          }
+        }
+        // remember the newest one we showed, so a reload never shows these again
+        writeLastPopped(myUid, Math.max(...fresh.map((n) => n.createdAtMs)));
       },
       (err) => {
         // a missing index shows up here; the message contains a link to create it
