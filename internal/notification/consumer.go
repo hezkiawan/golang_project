@@ -12,7 +12,7 @@ import (
 
 type Consumer struct {
 	Channel   *amqp.Channel
-	Repo      *NotificationRepository
+	Repo      *NotificationRepository // only to look up the admin ids
 	Firestore *FirestoreStore
 }
 
@@ -67,7 +67,7 @@ func (c *Consumer) consume(queue string, handle func(ctx context.Context, body [
 	}
 }
 
-// booking.created → Firestore: one notification per admin; Postgres: the old row (until M4)
+// booking.created → Firestore: one notification per admin
 func (c *Consumer) handleBookingCreated(ctx context.Context, body []byte) error {
 	var event BookingCreatedEvent
 	if err := json.Unmarshal(body, &event); err != nil {
@@ -79,17 +79,12 @@ func (c *Consumer) handleBookingCreated(ctx context.Context, body []byte) error 
 		return err
 	}
 
-	// Firestore first: it is safe to repeat (fixed doc ids), the Postgres insert is not
+	// safe to repeat: fixed doc ids, so a redelivered message makes no duplicates
 	if err := c.Firestore.NotifyAdminsBookingCreated(ctx, adminIDs, event); err != nil {
 		return err
 	}
 
-	message := fmt.Sprintf("%s booked %s for %s (booking %d)", event.Username, event.ServiceName, event.BookingDate, event.BookingID)
-	if err := c.Repo.Create(ctx, event.BookingID, event.ServiceID, event.UserID, message); err != nil {
-		return err
-	}
-
-	log.Println("booking.created:", message, "→ notified", len(adminIDs), "admin(s)")
+	log.Println("booking.created: booking", event.BookingID, "by", event.Username, "→ notified", len(adminIDs), "admin(s)")
 	return nil
 }
 
