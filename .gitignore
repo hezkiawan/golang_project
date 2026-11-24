@@ -19,3 +19,5 @@ Thumbs.db
 # Firebase / Google service-account keys: never commit them
 *firebase-adminsdk*.json
 *service-account*.json
+
+
