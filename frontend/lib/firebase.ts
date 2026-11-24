@@ -1,4 +1,4 @@
-import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
+import { FirebaseError, getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
 import { getAuth, signInWithCustomToken, signOut, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 
@@ -27,15 +27,83 @@ export function firestoreDb(): Firestore {
   return getFirestore(getFirebaseApp());
 }
 
+// true once the browser starts leaving the page (a full navigation or closing the tab).
+// Requests that get cut off then are not real errors, so we don't report them.
+let pageIsUnloading = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    pageIsUnloading = true;
+  });
+  // coming back from the back/forward cache: the page is alive again
+  window.addEventListener("pageshow", () => {
+    pageIsUnloading = false;
+  });
+}
+
+// the sign-in that is running right now (null = none)
+let pendingSignIn: { uid: string; promise: Promise<void> } | null = null;
+
 // We log in with our own Go JWT (cookie). Firestore doesn't know that JWT, so we ask the
 // user service for a Firebase custom token (uid = our user id) and sign in to Firebase with it.
-export async function signInToFirebase() {
+//
+// Both layouts call this (and dev mode runs effects twice), so calls for the same user
+// share ONE running sign-in instead of each fetching a token.
+export function signInToFirebase(userId: number): Promise<void> {
+  const uid = String(userId);
+  if (pendingSignIn !== null && pendingSignIn.uid === uid) {
+    return pendingSignIn.promise;
+  }
+
+  // A sign-in for a different user is still running: wait for it to finish first,
+  // so it cannot finish last and leave the wrong user signed in.
+  const previous = pendingSignIn !== null ? pendingSignIn.promise.catch(() => {}) : Promise.resolve();
+
+  const promise: Promise<void> = previous
+    .then(() => doSignIn(uid))
+    .catch((err) => {
+      // cut off because the page is going away → not an error worth logging
+      if (pageIsUnloading || (err instanceof Error && err.name === "AbortError")) {
+        return;
+      }
+      throw err;
+    })
+    .finally(() => {
+      // only clear it if no newer sign-in has replaced it meanwhile
+      if (pendingSignIn !== null && pendingSignIn.promise === promise) {
+        pendingSignIn = null;
+      }
+    });
+
+  pendingSignIn = { uid, promise };
+  return promise;
+}
+
+async function doSignIn(uid: string) {
+  const auth = firebaseAuth();
+
+  // Firebase keeps its session in the browser. Wait until it has loaded it:
+  // on a normal page load we are already signed in as this user and need no new token.
+  await auth.authStateReady();
+  if (auth.currentUser?.uid === uid) {
+    return;
+  }
+
   const res = await fetch("/api/auth/firebase-token");
   if (!res.ok) {
     throw new Error("could not get a firebase token");
   }
   const data: { token: string } = await res.json();
-  await signInWithCustomToken(firebaseAuth(), data.token);
+
+  try {
+    await signInWithCustomToken(auth, data.token);
+  } catch (err) {
+    // a short network hiccup: try once more with the same token (it is valid for an hour)
+    if (err instanceof FirebaseError && err.code === "auth/network-request-failed") {
+      await signInWithCustomToken(auth, data.token);
+      return;
+    }
+    throw err;
+  }
 }
 
 // on logout: forget the Firebase session too, so the next user doesn't inherit it
