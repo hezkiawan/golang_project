@@ -11,11 +11,22 @@ import (
 
 	catalogpb "golang-microservice-practice/proto"
 
+	_ "golang-microservice-practice/docs/catalog" // registers the generated spec (the _ means "import only for its side effect")
+
+	"github.com/gofiber/contrib/v3/swaggo"
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	"google.golang.org/grpc"
 )
+
+// @title           HomeFix Catalog Service API
+// @version         1.0
+// @description     Services list: anyone can read it, only admins can add, rename or delete.
+// @description     Auth: log in at POST /auth/login (user service, port 3003). The browser then sends the jwt cookie automatically.
+// @description     (The gRPC CheckServiceExists on port 50051 is not part of this HTTP API.)
+// @host            localhost:3002
+// @BasePath        /
 
 func main() {
 
@@ -51,7 +62,12 @@ func main() {
 	// create new fiber instance
 	app := fiber.New()
 
-	app.Use(middleware.SlowDown()) 
+	// Swagger UI at http://localhost:3002/swagger/index.html
+	// After changing a godoc comment, regenerate from the project root:
+	//   swag init -d cmd/catalog,internal/catalog -g main.go -o docs/catalog
+	app.Get("/swagger/*", swaggo.HandlerDefault)
+
+	app.Use(middleware.SlowDown())
 
 	catalog.CatalogRoutes(app, handler, secret)
 

@@ -23,16 +23,18 @@ type BookingHandler struct {
 
 // CreateBooking godoc
 // @Summary      Book a service for a date
-// @Description  Creates a pending booking. One service can have only one active booking per date. Admins cannot book.
+// @Description  Auth: login required (normal users only). Creates a pending booking. One service can have only one active booking per date. Admins cannot book.
 // @Tags         bookings
 // @Accept       json
 // @Produce      json
 // @Param        body  body      BookingRequest  true  "Service and date"
 // @Success      201   {object}  Booking
-// @Failure      400   {object}  ErrorResponse  "invalid or past date"
+// @Failure      400   {object}  ErrorResponse  "service id empty or wrong, service does not exist, or date not YYYY-MM-DD / in the past"
 // @Failure      401   {object}  ErrorResponse  "not logged in"
 // @Failure      403   {object}  ErrorResponse  "admins cannot create bookings"
 // @Failure      409   {object}  ErrorResponse  "already booked on that date"
+// @Failure      500   {object}  ErrorResponse  "database error or event publish failed"
+// @Failure      503   {object}  ErrorResponse  "catalog service unavailable"
 // @Router       /bookings [post]
 func (h *BookingHandler) CreateBooking(c fiber.Ctx) error {
 
@@ -167,7 +169,7 @@ func (h *BookingHandler) publishBookingCancelled(ctx context.Context, b Booking)
 
 // GetBookings godoc
 // @Summary      List all bookings (admin table)
-// @Description  One page of bookings with user and service names. All filters combine with AND. Admin only.
+// @Description  Auth: admin only. One page of bookings with user and service names. All filters combine with AND.
 // @Tags         bookings
 // @Produce      json
 // @Param        page      query  int     false  "Page number"               default(1)
@@ -241,7 +243,7 @@ func (h *BookingHandler) GetBookings(c fiber.Ctx) error {
 
 // GetMyBookings godoc
 // @Summary      List my bookings (My Bookings table)
-// @Description  One page of the logged-in user's bookings, with the service name. Default order: booking date, newest first.
+// @Description  Auth: login required. One page of the logged-in user's bookings, with the service name. Default order: booking date, newest first.
 // @Tags         bookings
 // @Produce      json
 // @Param        page    query  int     false  "Page number"              default(1)
@@ -324,7 +326,7 @@ func parseStatuses(c fiber.Ctx) []string {
 
 // GetBookingByID godoc
 // @Summary      One booking (detail page)
-// @Description  A booking with the user's and service's names. Admins can see any booking; a user only their own (otherwise 404, so we don't reveal that it exists).
+// @Description  Auth: login required. A booking with the user's and service's names. Admins can see any booking; a user only their own (otherwise 404, so we don't reveal that it exists).
 // @Tags         bookings
 // @Produce      json
 // @Param        id   path      int  true  "Booking id"
@@ -332,6 +334,7 @@ func parseStatuses(c fiber.Ctx) []string {
 // @Failure      400  {object}  ErrorResponse  "invalid booking id"
 // @Failure      401  {object}  ErrorResponse  "not logged in"
 // @Failure      404  {object}  ErrorResponse  "not found (or not yours)"
+// @Failure      500  {object}  ErrorResponse
 // @Router       /bookings/{id} [get]
 func (h *BookingHandler) GetBookingByID(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
@@ -360,7 +363,7 @@ func (h *BookingHandler) GetBookingByID(c fiber.Ctx) error {
 
 // ConfirmBooking godoc
 // @Summary      Approve a booking (admin)
-// @Description  pending → confirmed. Admin only. Any other status gives 409.
+// @Description  Auth: admin only. pending → confirmed, for any user's booking. Any other status gives 409.
 // @Tags         bookings
 // @Produce      json
 // @Param        id   path      int  true  "Booking id"
@@ -369,6 +372,7 @@ func (h *BookingHandler) GetBookingByID(c fiber.Ctx) error {
 // @Failure      401  {object}  ErrorResponse  "not logged in"
 // @Failure      403  {object}  ErrorResponse  "not an admin"
 // @Failure      409  {object}  ErrorResponse  "not found or not pending"
+// @Failure      500  {object}  ErrorResponse
 // @Router       /bookings/{id}/confirm [post]
 func (h *BookingHandler) ConfirmBooking(c fiber.Ctx) error {
 	// get :id from url and convert string -> int64
@@ -392,7 +396,7 @@ func (h *BookingHandler) ConfirmBooking(c fiber.Ctx) error {
 
 // RejectBooking godoc
 // @Summary      Reject a booking (admin)
-// @Description  pending → rejected. Admin only. Any other status gives 409. A rejected booking frees the date.
+// @Description  Auth: admin only. pending → rejected. Any other status gives 409. A rejected booking frees the date.
 // @Tags         bookings
 // @Produce      json
 // @Param        id   path      int  true  "Booking id"
@@ -401,6 +405,7 @@ func (h *BookingHandler) ConfirmBooking(c fiber.Ctx) error {
 // @Failure      401  {object}  ErrorResponse  "not logged in"
 // @Failure      403  {object}  ErrorResponse  "not an admin"
 // @Failure      409  {object}  ErrorResponse  "not found or not pending"
+// @Failure      500  {object}  ErrorResponse
 // @Router       /bookings/{id}/reject [post]
 func (h *BookingHandler) RejectBooking(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
@@ -423,7 +428,7 @@ func (h *BookingHandler) RejectBooking(c fiber.Ctx) error {
 
 // CancelBooking godoc
 // @Summary      Cancel my booking
-// @Description  pending → cancelled. Only the owner, and only while pending. Confirmed, rejected or someone else's booking gives 409.
+// @Description  Auth: login required. pending → cancelled. Only the owner, and only while pending. Confirmed, rejected or someone else's booking gives 409.
 // @Tags         bookings
 // @Produce      json
 // @Param        id   path      int  true  "Booking id"
@@ -431,6 +436,7 @@ func (h *BookingHandler) RejectBooking(c fiber.Ctx) error {
 // @Failure      400  {object}  ErrorResponse  "invalid booking id"
 // @Failure      401  {object}  ErrorResponse  "not logged in"
 // @Failure      409  {object}  ErrorResponse  "not found, not yours, or not pending"
+// @Failure      500  {object}  ErrorResponse
 // @Router       /bookings/{id}/cancel [post]
 func (h *BookingHandler) CancelBooking(c fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
@@ -454,6 +460,17 @@ func (h *BookingHandler) CancelBooking(c fiber.Ctx) error {
 	return c.JSON(b)
 }
 
+// GetAvailability godoc
+// @Summary      Which services are taken on a date
+// @Description  Auth: login required. Ids of the services that already have a pending or confirmed booking on that date, so the booking form can disable them.
+// @Tags         bookings
+// @Produce      json
+// @Param        date  query     string  true  "Date (YYYY-MM-DD)"
+// @Success      200   {object}  AvailabilityResponse
+// @Failure      400   {object}  ErrorResponse  "date is not YYYY-MM-DD"
+// @Failure      401   {object}  ErrorResponse  "not logged in"
+// @Failure      500   {object}  ErrorResponse
+// @Router       /bookings/availability [get]
 func (h *BookingHandler) GetAvailability(c fiber.Ctx) error {
 	// ?date=2026-11-20
 	date, err := time.Parse("2006-01-02", c.Query("date"))
@@ -466,5 +483,5 @@ func (h *BookingHandler) GetAvailability(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "database error"})
 	}
 
-	return c.JSON(fiber.Map{"booked_service_ids": ids})
+	return c.JSON(AvailabilityResponse{BookedServiceIDs: ids})
 }

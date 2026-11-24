@@ -21,8 +21,9 @@ import (
 
 // @title           HomeFix Booking Service API
 // @version         1.0
-// @description     Bookings: create, confirm/cancel, availability and the admin bookings table.
-// @description     Auth: log in at POST /auth/login (user service). The browser then sends the jwt cookie automatically.
+// @description     Bookings: create, detail, approve/reject (admin), cancel (owner), availability, My Bookings and the admin bookings table.
+// @description     Auth: log in at POST /auth/login (user service, port 3003). The browser then sends the jwt cookie automatically.
+// @description     Every route needs that cookie (no cookie → 401). Routes marked "admin only" give 403 to normal users.
 // @host            localhost:3001
 // @BasePath        /
 
@@ -132,6 +133,8 @@ func main() {
 	app := fiber.New()
 
 	// Swagger UI at http://localhost:3001/swagger/index.html
+	// After changing a godoc comment, regenerate from the project root:
+	//   swag init -d cmd/booking,internal/booking -g main.go -o docs/booking
 	app.Get("/swagger/*", swaggo.HandlerDefault)
 
 	app.Use(middleware.SlowDown())

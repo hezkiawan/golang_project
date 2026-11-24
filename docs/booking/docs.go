@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/bookings": {
             "get": {
-                "description": "One page of bookings with user and service names. All filters combine with AND. Admin only.",
+                "description": "Auth: admin only. One page of bookings with user and service names. All filters combine with AND.",
                 "produces": [
                     "application/json"
                 ],
@@ -122,7 +122,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Creates a pending booking. One service can have only one active booking per date. Admins cannot book.",
+                "description": "Auth: login required (normal users only). Creates a pending booking. One service can have only one active booking per date. Admins cannot book.",
                 "consumes": [
                     "application/json"
                 ],
@@ -152,7 +152,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "invalid or past date",
+                        "description": "service id empty or wrong, service does not exist, or date not YYYY-MM-DD / in the past",
                         "schema": {
                             "$ref": "#/definitions/booking.ErrorResponse"
                         }
@@ -174,13 +174,72 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/booking.ErrorResponse"
                         }
+                    },
+                    "500": {
+                        "description": "database error or event publish failed",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "catalog service unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/bookings/availability": {
+            "get": {
+                "description": "Auth: login required. Ids of the services that already have a pending or confirmed booking on that date, so the booking form can disable them.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "bookings"
+                ],
+                "summary": "Which services are taken on a date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Date (YYYY-MM-DD)",
+                        "name": "date",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/booking.AvailabilityResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "date is not YYYY-MM-DD",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "not logged in",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
                     }
                 }
             }
         },
         "/bookings/me": {
             "get": {
-                "description": "One page of the logged-in user's bookings, with the service name. Default order: booking date, newest first.",
+                "description": "Auth: login required. One page of the logged-in user's bookings, with the service name. Default order: booking date, newest first.",
                 "produces": [
                     "application/json"
                 ],
@@ -256,7 +315,7 @@ const docTemplate = `{
         },
         "/bookings/{id}": {
             "get": {
-                "description": "A booking with the user's and service's names. Admins can see any booking; a user only their own (otherwise 404, so we don't reveal that it exists).",
+                "description": "Auth: login required. A booking with the user's and service's names. Admins can see any booking; a user only their own (otherwise 404, so we don't reveal that it exists).",
                 "produces": [
                     "application/json"
                 ],
@@ -297,13 +356,19 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/booking.ErrorResponse"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
                     }
                 }
             }
         },
         "/bookings/{id}/cancel": {
             "post": {
-                "description": "pending → cancelled. Only the owner, and only while pending. Confirmed, rejected or someone else's booking gives 409.",
+                "description": "Auth: login required. pending → cancelled. Only the owner, and only while pending. Confirmed, rejected or someone else's booking gives 409.",
                 "produces": [
                     "application/json"
                 ],
@@ -344,13 +409,19 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/booking.ErrorResponse"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
                     }
                 }
             }
         },
         "/bookings/{id}/confirm": {
             "post": {
-                "description": "pending → confirmed. Admin only. Any other status gives 409.",
+                "description": "Auth: admin only. pending → confirmed, for any user's booking. Any other status gives 409.",
                 "produces": [
                     "application/json"
                 ],
@@ -397,13 +468,19 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/booking.ErrorResponse"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
                     }
                 }
             }
         },
         "/bookings/{id}/reject": {
             "post": {
-                "description": "pending → rejected. Admin only. Any other status gives 409. A rejected booking frees the date.",
+                "description": "Auth: admin only. pending → rejected. Any other status gives 409. A rejected booking frees the date.",
                 "produces": [
                     "application/json"
                 ],
@@ -447,6 +524,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "not found or not pending",
+                        "schema": {
+                            "$ref": "#/definitions/booking.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/booking.ErrorResponse"
                         }
@@ -499,6 +582,17 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "booking.AvailabilityResponse": {
+            "type": "object",
+            "properties": {
+                "booked_service_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },
@@ -612,7 +706,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "HomeFix Booking Service API",
-	Description:      "Bookings: create, confirm/cancel, availability and the admin bookings table.\nAuth: log in at POST /auth/login (user service). The browser then sends the jwt cookie automatically.",
+	Description:      "Bookings: create, detail, approve/reject (admin), cancel (owner), availability, My Bookings and the admin bookings table.\nAuth: log in at POST /auth/login (user service, port 3003). The browser then sends the jwt cookie automatically.\nEvery route needs that cookie (no cookie → 401). Routes marked \"admin only\" give 403 to normal users.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

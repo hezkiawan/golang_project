@@ -18,13 +18,19 @@ type UserHandler struct {
 	FirebaseAuth *auth.Client // signs Firebase custom tokens
 }
 
+// RegisterUser godoc
+// @Summary      Create an account
+// @Description  Auth: public. Creates a normal user (role "user"). Does not log in: call POST /auth/login afterwards.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      RegisterRequest  true  "Email, username and password (8-72 characters)"
+// @Success      201   {object}  User
+// @Failure      400   {object}  ErrorResponse  "body can't be parsed, empty field, bad password length, or email already used"
+// @Failure      500   {object}  ErrorResponse
+// @Router       /auth/register [post]
 func (h *UserHandler) RegisterUser(c fiber.Ctx) error {
-	type reqBody struct {
-		Email    string `json:"email"`
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-	var body reqBody
+	var body RegisterRequest
 	if err := c.Bind().Body(&body); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "cant parse body"})
 	}
@@ -65,12 +71,21 @@ func (h *UserHandler) RegisterUser(c fiber.Ctx) error {
 	return c.Status(fiber.StatusCreated).JSON(u)
 }
 
+// LoginUser godoc
+// @Summary      Log in
+// @Description  Auth: public. Checks email + password and sets the "jwt" HttpOnly cookie (valid 24 hours). The other services read that cookie.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        body  body      LoginRequest  true  "Email and password"
+// @Success      200   {object}  LoginResponse
+// @Header       200   {string}  Set-Cookie  "jwt=<token>; Path=/; HttpOnly"
+// @Failure      400   {object}  ErrorResponse  "body can't be parsed"
+// @Failure      401   {object}  ErrorResponse  "wrong email or password"
+// @Failure      500   {object}  ErrorResponse
+// @Router       /auth/login [post]
 func (h *UserHandler) LoginUser(c fiber.Ctx) error {
-	type reqBody struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-	var body reqBody
+	var body LoginRequest
 	if err := c.Bind().Body(&body); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "can not parse request"})
 	}
@@ -110,9 +125,17 @@ func (h *UserHandler) LoginUser(c fiber.Ctx) error {
 		HTTPOnly: true,
 	})
 
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{"message": "login successful", "role": u.Role})
+	return c.Status(fiber.StatusOK).JSON(LoginResponse{Message: "login successful", Role: u.Role})
 }
 
+// LogoutUser godoc
+// @Summary      Log out
+// @Description  Auth: login required. Clears the "jwt" cookie.
+// @Tags         auth
+// @Produce      json
+// @Success      200  {object}  MessageResponse
+// @Failure      401  {object}  ErrorResponse  "not logged in"
+// @Router       /auth/logout [post]
 func (h *UserHandler) LogoutUser(c fiber.Ctx) error {
 	// clear the cookie (Path must match the login cookie)
 	c.Cookie(&fiber.Cookie{
@@ -123,9 +146,27 @@ func (h *UserHandler) LogoutUser(c fiber.Ctx) error {
 		HTTPOnly: true,
 	})
 
-	return c.JSON(fiber.Map{"message": "logged out successfully"})
+	return c.JSON(MessageResponse{Message: "logged out successfully"})
 }
 
+// GetAllUsers godoc
+// @Summary      List users (admin table)
+// @Description  Auth: admin only. One page of users. All filters combine with AND. (Responses may be slowed down by SLOW_MS, to test loading states.)
+// @Tags         users
+// @Produce      json
+// @Param        page      query  int     false  "Page number"               default(1)
+// @Param        limit     query  int     false  "Rows per page (max 100)"   default(10)
+// @Param        sort      query  string  false  "Sort column"     Enums(username, email, role, created_at)
+// @Param        order     query  string  false  "Sort direction"  Enums(asc, desc)
+// @Param        role      query  string  false  "Comma-separated roles (admin, user), e.g. admin,user"
+// @Param        username  query  string  false  "Search in the username"
+// @Param        email     query  string  false  "Search in the email"
+// @Param        q         query  string  false  "Search in username or email"
+// @Success      200  {object}  UserPage
+// @Failure      401  {object}  ErrorResponse  "not logged in"
+// @Failure      403  {object}  ErrorResponse  "not an admin"
+// @Failure      500  {object}  ErrorResponse
+// @Router       /users [get]
 func (h *UserHandler) GetAllUsers(c fiber.Ctx) error {
 	// pagination
 	page, err := strconv.Atoi(c.Query("page", "1"))
@@ -180,9 +221,20 @@ func (h *UserHandler) GetAllUsers(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "database error"})
 	}
 
-	return c.JSON(fiber.Map{"data": list, "total": total, "page": page, "limit": limit})
+	return c.JSON(UserPage{Data: list, Total: total, Page: page, Limit: limit})
 }
 
+// GetAllUsername godoc
+// @Summary      All users, short form (lookup list)
+// @Description  Auth: admin only. Every user with id, username, email and role, not paginated. (Responses may be slowed down by SLOW_MS.)
+// @Tags         users
+// @Produce      json
+// @Param        sort  query     string  false  "Order by username"  Enums(asc, desc)
+// @Success      200   {array}   UserSummary
+// @Failure      401   {object}  ErrorResponse  "not logged in"
+// @Failure      403   {object}  ErrorResponse  "not an admin"
+// @Failure      500   {object}  ErrorResponse
+// @Router       /usernames [get]
 func (h *UserHandler) GetAllUsername(c fiber.Ctx) error {
 	// only "asc" or "desc" are allowed; anything else = default order
 	sort := strings.ToLower(strings.TrimSpace(c.Query("sort")))
@@ -198,6 +250,15 @@ func (h *UserHandler) GetAllUsername(c fiber.Ctx) error {
 	return c.JSON(list)
 }
 
+// GetMe godoc
+// @Summary      Who am I
+// @Description  Auth: login required. The logged-in user's profile. A valid cookie for a deleted user also gives 401.
+// @Tags         auth
+// @Produce      json
+// @Success      200  {object}  User
+// @Failure      401  {object}  ErrorResponse  "not logged in, or user not found"
+// @Failure      500  {object}  ErrorResponse
+// @Router       /auth/me [get]
 func (h *UserHandler) GetMe(c fiber.Ctx) error {
 	// userId was put here by the auth middleware, from the jwt cookie
 	userID := c.Locals("userId").(int64)
@@ -214,7 +275,16 @@ func (h *UserHandler) GetMe(c fiber.Ctx) error {
 	return c.JSON(u)
 }
 
-// GET /auth/firebase-token
+// GetFirebaseToken godoc
+// @Summary      Firebase custom token
+// @Description  Auth: login required. A Firebase custom token whose uid is our user id; the frontend passes it to signInWithCustomToken so it can read its notifications from Firestore.
+// @Tags         auth
+// @Produce      json
+// @Success      200  {object}  FirebaseTokenResponse
+// @Failure      401  {object}  ErrorResponse  "not logged in"
+// @Failure      500  {object}  ErrorResponse  "could not create firebase token"
+// @Router       /auth/firebase-token [get]
+//
 // The browser is logged in with our own JWT cookie, but Firestore only trusts Firebase Auth.
 // So we "translate": make a Firebase custom token whose uid is our user id as a string.
 // The frontend signs in with it, and the Firestore rules compare request.auth.uid with recipientId.
@@ -226,5 +296,5 @@ func (h *UserHandler) GetFirebaseToken(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not create firebase token"})
 	}
 
-	return c.JSON(fiber.Map{"token": token})
+	return c.JSON(FirebaseTokenResponse{Token: token})
 }

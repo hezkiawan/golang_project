@@ -8,11 +8,22 @@ import (
 	"log"
 	"os"
 
+	_ "golang-microservice-practice/docs/user" // registers the generated spec (the _ means "import only for its side effect")
+
 	firebase "firebase.google.com/go/v4"
+	"github.com/gofiber/contrib/v3/swaggo"
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
+
+// @title           HomeFix User Service API
+// @version         1.0
+// @description     Accounts: register, login/logout, "who am I", the Firebase token for the notification bell, and the admin user lists.
+// @description     Auth: POST /auth/login sets the "jwt" HttpOnly cookie; the browser sends it automatically (also to the booking and catalog services).
+// @description     No cookie → 401. Routes marked "admin only" give 403 to normal users.
+// @host            localhost:3003
+// @BasePath        /
 
 func main() {
 	if err := godotenv.Load(); err != nil {
@@ -51,6 +62,12 @@ func main() {
 
 	// create fiber app
 	app := fiber.New()
+
+	// Swagger UI at http://localhost:3003/swagger/index.html
+	// After changing a godoc comment, regenerate from the project root:
+	//   swag init -d cmd/user,internal/user -g main.go -o docs/user
+	app.Get("/swagger/*", swaggo.HandlerDefault)
+
 	routes.UserRoutes(app, &handler, authMiddleware)
 
 	// run server
