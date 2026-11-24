@@ -147,6 +147,24 @@ func (h *BookingHandler) publishBookingReviewed(ctx context.Context, b Booking) 
 	}
 }
 
+// after a user cancelled their booking: tell the notification service, so every admin gets a notification.
+// The cancel is already saved, so a failure here is only logged (the user's request still succeeds)
+func (h *BookingHandler) publishBookingCancelled(ctx context.Context, b Booking) {
+	d, err := h.Repo.GetBookingByID(ctx, b.ID)
+	if err == nil {
+		err = h.publishEvent(ctx, "booking.cancelled", BookingCancelledEvent{
+			BookingID:   d.ID,
+			UserID:      d.UserID,
+			Username:    d.Username,
+			ServiceName: d.ServiceName,
+			BookingDate: d.BookingDate,
+		})
+	}
+	if err != nil {
+		log.Println("booking.cancelled: could not publish for booking", b.ID, ":", err)
+	}
+}
+
 // GetBookings godoc
 // @Summary      List all bookings (admin table)
 // @Description  One page of bookings with user and service names. All filters combine with AND. Admin only.
@@ -429,6 +447,9 @@ func (h *BookingHandler) CancelBooking(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "database error"})
 	}
+
+	// only reached when the cancel really happened (409/500 returned above)
+	h.publishBookingCancelled(c.Context(), b) // → "Booking cancelled" for every admin
 
 	return c.JSON(b)
 }

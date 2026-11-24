@@ -18,3 +18,12 @@ type BookingReviewedEvent struct {
 	BookingDate string `json:"booking_date"`
 	Status      string `json:"status"` // "confirmed" or "rejected"
 }
+
+// from the "booking.cancelled" queue (same JSON as BookingCancelledEvent in internal/booking/model.go)
+type BookingCancelledEvent struct {
+	BookingID   int64  `json:"booking_id"`
+	UserID      int64  `json:"user_id"`
+	Username    string `json:"username"`
+	ServiceName string `json:"service_name"`
+	BookingDate string `json:"booking_date"`
+}

@@ -19,10 +19,11 @@ type Consumer struct {
 // a message we can never handle (bad JSON). Retrying won't help, so we drop it
 var errBadMessage = errors.New("bad message")
 
-// start both queue listeners (each one runs in its own goroutine)
+// start the queue listeners (each one runs in its own goroutine)
 func (c *Consumer) Start() {
 	go c.consume("booking.created", c.handleBookingCreated)
 	go c.consume("booking.reviewed", c.handleBookingReviewed)
+	go c.consume("booking.cancelled", c.handleBookingCancelled)
 }
 
 // read messages from one queue forever and call handle for each one
@@ -100,5 +101,26 @@ func (c *Consumer) handleBookingReviewed(ctx context.Context, body []byte) error
 	}
 
 	log.Println("booking.reviewed: booking", event.BookingID, "is", event.Status, "→ notified user", event.UserID)
+	return nil
+}
+
+// booking.cancelled → Firestore: one notification per admin
+func (c *Consumer) handleBookingCancelled(ctx context.Context, body []byte) error {
+	var event BookingCancelledEvent
+	if err := json.Unmarshal(body, &event); err != nil {
+		return fmt.Errorf("%w: %v", errBadMessage, err)
+	}
+
+	adminIDs, err := c.Repo.GetAdminIDs(ctx)
+	if err != nil {
+		return err
+	}
+
+	// safe to repeat: fixed doc ids, so a redelivered message makes no duplicates
+	if err := c.Firestore.NotifyAdminsBookingCancelled(ctx, adminIDs, event); err != nil {
+		return err
+	}
+
+	log.Println("booking.cancelled: booking", event.BookingID, "by", event.Username, "→ notified", len(adminIDs), "admin(s)")
 	return nil
 }

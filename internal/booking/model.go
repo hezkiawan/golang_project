@@ -61,6 +61,16 @@ type BookingReviewedEvent struct {
 	Status      string `json:"status"` // "confirmed" or "rejected"
 }
 
+// sent on the "booking.cancelled" queue when a user cancels their own pending booking.
+// It carries the names, so the admins' notification can say who cancelled what
+type BookingCancelledEvent struct {
+	BookingID   int64  `json:"booking_id"`
+	UserID      int64  `json:"user_id"`
+	Username    string `json:"username"`
+	ServiceName string `json:"service_name"`
+	BookingDate string `json:"booking_date"`
+}
+
 // error body returned by the handlers
 type ErrorResponse struct {
 	Error   string `json:"error,omitempty"`
