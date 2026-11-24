@@ -46,7 +46,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             dispatch(setMe(data));
             // also sign in to Firebase (for the live notification bell). If it fails,
             // the rest of the app still works, so we only log the error.
-            signInToFirebase().catch((err) => console.error("firebase sign-in failed:", err));
+            signInToFirebase(data.user_id).catch((err) => console.error("firebase sign-in failed:", err));
         });
     }, []);
 
