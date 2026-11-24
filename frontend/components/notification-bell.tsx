@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell } from "lucide-react";
 import { onAuthStateChanged } from "firebase/auth";
@@ -21,6 +21,11 @@ import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/compone
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAppSelector } from "@/lib/hooks";
 import { firebaseAuth, firestoreDb } from "@/lib/firebase";
+import {
+  browserNotificationsSupported,
+  registerNotificationWorker,
+  showBrowserNotification,
+} from "@/lib/browser-notifications";
 import { cn } from "@/lib/utils";
 
 // the fields of a notifications/{id} document that the dropdown shows
@@ -60,6 +65,37 @@ function timeAgo(date: Date | null, now: number): string {
   return `${days} d ago`;
 }
 
+// "unsupported" = no Notification API or no service workers in this browser
+type BrowserPermission = "unsupported" | NotificationPermission;
+
+function readBrowserPermission(): BrowserPermission {
+  return browserNotificationsSupported() ? Notification.permission : "unsupported";
+}
+
+// the booking detail page for this role
+function bookingPath(isAdmin: boolean, bookingId: number): string {
+  return isAdmin ? `/admin/bookings/${bookingId}` : `/bookings/${bookingId}`;
+}
+
+// A browser notification opens e.g. "/bookings/5?notification=abc".
+// Split that into the page to show ("/bookings/5") and the notification id ("abc").
+function splitNotificationUrl(url: string): { path: string; notificationId: string | null } {
+  const parsed = new URL(url, window.location.origin);
+  const notificationId = parsed.searchParams.get("notification");
+  parsed.searchParams.delete("notification");
+  return { path: parsed.pathname + parsed.search, notificationId };
+}
+
+async function markNotificationRead(notificationId: string) {
+  try {
+    // only the "read" field, so the security rules allow the update
+    // (the rules also refuse ids that belong to someone else)
+    await updateDoc(doc(firestoreDb(), "notifications", notificationId), { read: true });
+  } catch (err) {
+    console.error("mark notification as read:", err);
+  }
+}
+
 export default function NotificationBell() {
   const me = useAppSelector((state) => state.auth.me);
   const router = useRouter();
@@ -77,6 +113,19 @@ export default function NotificationBell() {
   const [marking, setMarking] = useState(false);
   // "now" for the relative timestamps, refreshed while the dropdown is open
   const [now, setNow] = useState(() => Date.now());
+  // browser notification permission ("unsupported" until we have checked in the browser)
+  const [permission, setPermission] = useState<BrowserPermission>("unsupported");
+
+  // Newest createdAt (in ms) we have seen in the list during this session.
+  // null = the first snapshot has not arrived yet. Only documents NEWER than this value
+  // are "genuinely new" (see the list listener below).
+  const newestSeenRef = useRef<number | null>(null);
+
+  // register the service worker once and read the current permission (browser only)
+  useEffect(() => {
+    registerNotificationWorker();
+    setPermission(readBrowserPermission());
+  }, []);
 
   // follow the Firebase sign-in state (the layout signs us in after /api/auth/me)
   useEffect(() => {
@@ -92,6 +141,7 @@ export default function NotificationBell() {
   // signInWithCustomToken has switched it, so we never show someone else's notifications.
   const myUid = me ? String(me.user_id) : null;
   const ready = myUid !== null && firebaseUid === myUid;
+  const isAdmin = me?.role === "admin";
 
   // live query 1: all my unread notifications → the number on the badge.
   // Its own effect, so "Load more" (which changes pageLimit) does not restart it.
@@ -141,6 +191,34 @@ export default function NotificationBell() {
     const stopLatest = onSnapshot(
       latestQuery,
       (snapshot) => {
+        // Browser notifications, only for documents that are genuinely new:
+        // - the first snapshot of the session only remembers the newest createdAt;
+        // - "Load more" restarts this listener and older documents come in as "added"
+        //   too, but they are not newer than newestSeen, so they are skipped;
+        // - we compare Firestore timestamps with each other (not with Date.now()),
+        //   so a wrong clock on this computer does not matter.
+        // newestSeen also moves up while the tab is visible, so a notification we did
+        // not show then is not shown later after a restart.
+        const newestSeen = newestSeenRef.current;
+        let newest = newestSeen ?? 0;
+        for (const change of snapshot.docChanges()) {
+          if (change.type !== "added") {
+            continue;
+          }
+          const data = change.doc.data({ serverTimestamps: "estimate" });
+          const createdAtMs: number = data.createdAt ? data.createdAt.toMillis() : 0;
+          const isNew = newestSeen !== null && createdAtMs > newestSeen;
+          // tab visible → only the in-app bell, no browser notification
+          if (isNew && document.visibilityState === "hidden" && readBrowserPermission() === "granted") {
+            const path = bookingPath(isAdmin, data.bookingId);
+            showBrowserNotification(change.doc.id, data.title, data.body, `${path}?notification=${change.doc.id}`);
+          }
+          if (createdAtMs > newest) {
+            newest = createdAtMs;
+          }
+        }
+        newestSeenRef.current = newest;
+
         const list: NotificationItem[] = snapshot.docs.slice(0, pageLimit).map((d) => {
           // "estimate" = never null, even while a server timestamp is still being written
           const data = d.data({ serverTimestamps: "estimate" });
@@ -170,11 +248,12 @@ export default function NotificationBell() {
     return () => {
       stopLatest();
     };
-  }, [ready, myUid, pageLimit]);
+  }, [ready, myUid, pageLimit, isAdmin]);
 
   // forget this user's data on logout or user switch (the next user starts at page 1)
   useEffect(() => {
     return () => {
+      newestSeenRef.current = null; // the next session starts with a fresh "first snapshot"
       setPageLimit(PAGE_SIZE);
       setItems([]);
       setHasMore(false);
@@ -193,22 +272,61 @@ export default function NotificationBell() {
     return () => clearInterval(timer);
   }, [open]);
 
+  // Opened from a browser notification with a page load (the service worker used
+  // navigate() or openWindow()): the URL ends with ?notification=<id>.
+  // Mark it as read and remove the parameter from the address bar.
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    const { path, notificationId } = splitNotificationUrl(window.location.href);
+    if (notificationId !== null) {
+      markNotificationRead(notificationId);
+      router.replace(path);
+    }
+  }, [ready, router]);
+
+  // Opened from a browser notification without a page load: the service worker could not
+  // navigate this tab, so it sent us the URL and we change the route ourselves.
+  useEffect(() => {
+    if (!browserNotificationsSupported()) {
+      return;
+    }
+    function handleMessage(event: MessageEvent) {
+      if (event.data?.type !== "open-notification") {
+        return;
+      }
+      const { path, notificationId } = splitNotificationUrl(event.data.url);
+      if (notificationId !== null && ready) {
+        markNotificationRead(notificationId);
+      }
+      router.push(path);
+    }
+    navigator.serviceWorker.addEventListener("message", handleMessage);
+    navigator.serviceWorker.startMessages(); // deliver messages that arrived before we listened
+    return () => navigator.serviceWorker.removeEventListener("message", handleMessage);
+  }, [ready, router]);
+
+  // the permission prompt may only be opened from a click
+  async function handleEnableBrowserNotifications() {
+    try {
+      const result = await Notification.requestPermission();
+      setPermission(result);
+    } catch (err) {
+      console.error("request notification permission:", err);
+    }
+  }
+
   async function handleItemClick(item: NotificationItem) {
     if (!me) {
       return;
     }
     if (!item.read) {
-      try {
-        // only the "read" field, so the security rules allow the update
-        await updateDoc(doc(firestoreDb(), "notifications", item.id), { read: true });
-      } catch (err) {
-        // still go to the booking; the item just stays unread
-        console.error("mark notification as read:", err);
-      }
+      // if this fails we still go to the booking; the item just stays unread
+      await markNotificationRead(item.id);
     }
     setOpen(false);
-    const path = me.role === "admin" ? `/admin/bookings/${item.bookingId}` : `/bookings/${item.bookingId}`;
-    router.push(path);
+    router.push(bookingPath(isAdmin, item.bookingId));
   }
 
   async function handleMarkAllRead() {
@@ -244,7 +362,16 @@ export default function NotificationBell() {
   }
 
   return (
-    <Popover open={open} onOpenChange={(nextOpen) => setOpen(nextOpen)}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) {
+          // the user may have changed it in the site settings meanwhile
+          setPermission(readBrowserPermission());
+        }
+      }}
+    >
       <PopoverTrigger
         render={
           <Button
@@ -275,6 +402,18 @@ export default function NotificationBell() {
             {marking ? "Marking..." : "Mark all as read"}
           </Button>
         </div>
+
+        {/* browser notifications: nothing is shown when granted or unsupported */}
+        {permission === "default" && (
+          <Button variant="outline" size="sm" className="w-full" onClick={handleEnableBrowserNotifications}>
+            Enable browser notifications
+          </Button>
+        )}
+        {permission === "denied" && (
+          <p className="px-1 text-xs text-muted-foreground">
+            Browser notifications are blocked. You can allow them in your browser&apos;s site settings.
+          </p>
+        )}
 
         {/* loading → error → empty → list */}
         {!ready || loading ? (
