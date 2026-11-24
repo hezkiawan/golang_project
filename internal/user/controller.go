@@ -6,14 +6,16 @@ import (
 	"strings"
 	"time"
 
+	"firebase.google.com/go/v4/auth"
 	"github.com/gofiber/fiber/v3"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type UserHandler struct {
-	Repo      *UserRepository
-	JWTSecret []byte
+	Repo         *UserRepository
+	JWTSecret    []byte
+	FirebaseAuth *auth.Client // signs Firebase custom tokens
 }
 
 func (h *UserHandler) RegisterUser(c fiber.Ctx) error {
@@ -210,4 +212,19 @@ func (h *UserHandler) GetMe(c fiber.Ctx) error {
 	}
 
 	return c.JSON(u)
+}
+
+// GET /auth/firebase-token
+// The browser is logged in with our own JWT cookie, but Firestore only trusts Firebase Auth.
+// So we "translate": make a Firebase custom token whose uid is our user id as a string.
+// The frontend signs in with it, and the Firestore rules compare request.auth.uid with recipientId.
+func (h *UserHandler) GetFirebaseToken(c fiber.Ctx) error {
+	userID := c.Locals("userId").(int64)
+
+	token, err := h.FirebaseAuth.CustomToken(c.Context(), strconv.FormatInt(userID, 10))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "could not create firebase token"})
+	}
+
+	return c.JSON(fiber.Map{"token": token})
 }

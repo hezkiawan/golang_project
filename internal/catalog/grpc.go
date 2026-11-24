@@ -29,9 +29,10 @@ func (s *CatalogServer) CheckServiceExists(ctx context.Context, req *catalogpb.C
 	var exists bool
 
 	// check if service id from req exist in db, returns a bool that's then moved to exists
+	// a soft-deleted service counts as "doesn't exist", so nobody can book it anymore
 	err := s.pool.QueryRow(
 		ctx,
-		"SELECT EXISTS (SELECT 1 FROM services WHERE id = $1)",
+		"SELECT EXISTS (SELECT 1 FROM services WHERE id = $1 AND is_active = true)",
 		req.GetServiceId(),
 	).Scan(&exists)
 

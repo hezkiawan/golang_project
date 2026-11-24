@@ -1,5 +1,6 @@
 import { createAsyncThunk, createSlice } from "@reduxjs/toolkit";
 
+// what POST /bookings returns (Booking in internal/booking/model.go)
 export type Booking = {
     id: number;
     service_id: number;
@@ -9,19 +10,15 @@ export type Booking = {
     created_at: string;
 };
 
+// only the "book a service" flow lives here now.
+// The My Bookings table keeps its page of data in local state (like the admin tables),
+// and cancel/approve/reject happen on the booking detail page.
 type BookingsState = {
     creatingServiceId: number | null; // which service is being booked right now (null = none)
-    items: Booking[];             // my bookings
-    loadStatus: "idle" | "loading" | "succeeded" | "failed";
-    updatingId: number | null;    // which booking is being confirmed/cancelled right now
 };
 
 const initialState: BookingsState = {
     creatingServiceId: null,
-    items: [],
-    loadStatus: "idle",
-    updatingId: null,
-
 };
 
 export const createBooking = createAsyncThunk<Booking, { serviceId: number; date: string }, { rejectValue: string }>(
@@ -35,26 +32,6 @@ export const createBooking = createAsyncThunk<Booking, { serviceId: number; date
         const data = await res.json();
         if (!res.ok) return rejectWithValue(data.error || data.message); // includes the 409
         return data as Booking;
-    },
-);
-
-export const fetchMyBookings = createAsyncThunk<Booking[], void, { rejectValue: string }>(
-    "bookings/fetchMine",
-    async (_, { rejectWithValue }) => {
-        const res = await fetch("/api/bookings/me");
-        if (!res.ok) return rejectWithValue("Could not load bookings");
-        return (await res.json()) as Booking[];
-    },
-);
-
-// one thunk for both actions: action is "confirm" or "cancel"
-export const changeBookingStatus = createAsyncThunk<Booking, { id: number; action: "confirm" | "cancel" }, { rejectValue: string }>(
-    "bookings/changeStatus",
-    async ({ id, action }, { rejectWithValue }) => {
-        const res = await fetch("/api/bookings/" + id + "/" + action, { method: "POST" });
-        const data = await res.json();
-        if (!res.ok) return rejectWithValue(data.error || data.message);
-        return data as Booking; // Go returns the updated booking (RETURNING ...)
     },
 );
 
@@ -73,29 +50,7 @@ const bookingsSlice = createSlice({
             })
             .addCase(createBooking.rejected, (state) => {
                 state.creatingServiceId = null;
-            })
-            .addCase(changeBookingStatus.pending, (state, action) => {
-                state.updatingId = action.meta.arg.id; // this row is busy
-            })
-            .addCase(changeBookingStatus.fulfilled, (state, action) => {
-                state.updatingId = null;
-                // swap the old booking for the updated one: no need to reload the whole list
-                const i = state.items.findIndex((b) => b.id === action.payload.id);
-                if (i !== -1) state.items[i] = action.payload;
-            })
-            .addCase(changeBookingStatus.rejected, (state) => {
-                state.updatingId = null;
-            })
-            .addCase(fetchMyBookings.pending, (state) => {
-                state.loadStatus = "loading";
-            })
-            .addCase(fetchMyBookings.fulfilled, (state, action) => {
-                state.loadStatus = "succeeded";
-                state.items = action.payload;
-            })
-            .addCase(fetchMyBookings.rejected, (state) => {
-                state.loadStatus = "failed";
-            })
+            });
     },
 });
 

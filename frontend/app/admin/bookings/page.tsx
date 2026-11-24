@@ -1,7 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { StatusBadge } from "@/components/status-badge";
+import { BOOKING_STATUSES, StatusBadge } from "@/components/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TableRowsSkeleton } from "@/components/loading-skeletons";
 import { SortHeader } from "@/components/data-table/sort-header";
@@ -22,9 +23,14 @@ type AdminBooking = {
 };
 
 
-const STATUSES = ["pending", "confirmed", "cancelled"];
 
 export default function AdminBookingsPage() {
+    const router = useRouter();
+
+    function openBooking(id: number) {
+        router.push("/admin/bookings/" + id);
+    }
+
     // data from the server
     const [bookings, setBookings] = useState<AdminBooking[]>([]);
     const [total, setTotal] = useState(0);
@@ -36,7 +42,7 @@ export default function AdminBookingsPage() {
     const [limit, setLimit] = useState(10);
     const [sort, setSort] = useState("");
     const [order, setOrder] = useState<"asc" | "desc">("asc");
-    const [statuses, setStatuses] = useState<string[]>(STATUSES); // all ticked = no filter
+    const [statuses, setStatuses] = useState<string[]>(BOOKING_STATUSES); // all ticked = no filter
     const [date, setDate] = useState(""); // "" = any date
     const [userSearch, setUserSearch] = useState("");
     const [serviceSearch, setServiceSearch] = useState("");
@@ -46,7 +52,8 @@ export default function AdminBookingsPage() {
 
     // the table: every time a control changes
     useEffect(() => {
-        let ignore = false;
+        // lets the cleanup cancel this request if the filters change before it finishes
+        const controller = new AbortController();
         setLoading(true);
 
         const params = new URLSearchParams({ page: String(page), limit: String(limit) });
@@ -54,26 +61,32 @@ export default function AdminBookingsPage() {
             params.set("sort", sort);
             params.set("order", order);
         }
-        if (statuses.length < STATUSES.length) params.set("status", statuses.join(","));
+        if (statuses.length < BOOKING_STATUSES.length) params.set("status", statuses.join(","));
         if (date !== "") params.set("date", date);
 
         if (debouncedUser.trim() !== "") params.set("username", debouncedUser.trim());
         if (debouncedService.trim() !== "") params.set("service", debouncedService.trim());
 
-        fetch("/api/bookings?" + params.toString()).then(async (res) => {
-            if (ignore) return;
-            if (res.ok) {
-                const data = await res.json();
-                if (!ignore) {
+        async function loadBookings() {
+            try {
+                const res = await fetch("/api/bookings?" + params.toString(), { signal: controller.signal });
+                if (res.ok) {
+                    const data = await res.json(); // also cancelled by the signal
                     setBookings(data.data ?? []);
                     setTotal(data.total ?? 0);
                 }
+                setLoading(false);
+            } catch (err) {
+                // we cancelled this request ourselves: a newer one is already running
+                if (err instanceof Error && err.name === "AbortError") return;
+                setLoading(false); // a real network error: don't leave the skeleton forever
             }
-            setLoading(false);
-        });
+        }
+        loadBookings();
 
+        // cleanup: React runs this when a filter changes (or the page closes)
         return () => {
-            ignore = true;
+            controller.abort();
         };
     }, [page, limit, sort, order, statuses, date, debouncedUser, debouncedService]);
 
@@ -91,7 +104,7 @@ export default function AdminBookingsPage() {
     }
 
     const from = (page - 1) * limit + 1;
-    const isFiltering = statuses.length < STATUSES.length || date !== "" || userSearch !== "" || serviceSearch !== "";
+    const isFiltering = statuses.length < BOOKING_STATUSES.length || date !== "" || userSearch !== "" || serviceSearch !== "";
 
     return (
         <div>
@@ -144,7 +157,7 @@ export default function AdminBookingsPage() {
                                     <SortHeader label="Status" column="status" sort={sort} order={order} onSort={handleSort} />
                                     <CheckboxFilter
                                         label="Filter status"
-                                        options={STATUSES}
+                                        options={BOOKING_STATUSES}
                                         selected={statuses}
                                         onChange={(value) => {
                                             setStatuses(value);
@@ -166,10 +179,19 @@ export default function AdminBookingsPage() {
                             </TableRow>
                         ) : (
                             bookings.map((b, i) => (
-                                <TableRow key={b.id}>
+                                // click (or Enter on) a row to open the detail page (approve / reject)
+                                <TableRow
+                                    key={b.id}
+                                    className="cursor-pointer"
+                                    tabIndex={0}
+                                    onClick={() => openBooking(b.id)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") openBooking(b.id);
+                                    }}
+                                >
                                     <TableCell>{from + i}</TableCell>
                                     <TableCell className="font-medium">{b.username}</TableCell>
-                                    <TableCell>{b.service_id}</TableCell>
+                                    <TableCell>{b.service_name}</TableCell>
                                     <TableCell>{b.booking_date}</TableCell>
                                     <TableCell>
                                         <StatusBadge status={b.status} />

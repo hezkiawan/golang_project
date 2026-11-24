@@ -10,6 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { RowsSkeleton } from "@/components/loading-skeletons";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { setMe, clearMe } from "@/lib/features/auth/authSlice";
+import { signInToFirebase, signOutOfFirebase } from "@/lib/firebase";
+import NotificationBell from "@/components/notification-bell";
 
 // User struct
 type Me = {
@@ -22,7 +24,6 @@ type Me = {
 const links = [
   { href: "/", label: "Services" },
   { href: "/bookings", label: "Bookings" },
-  { href: "/notifications", label: "Notifications" },
 ];
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
@@ -48,11 +49,20 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         return;
       }
       dispatch(setMe(data)); // uses redux
+      // also sign in to Firebase (for the live notification bell). If it fails,
+      // the rest of the app still works, so we only log the error.
+      signInToFirebase().catch((err) => console.error("firebase sign-in failed:", err));
     });
   }, []);
 
   async function handleLogout() {
     setOpen(false);
+    // sign out of Firebase first, so the bell's listeners stop right away
+    try {
+      await signOutOfFirebase();
+    } catch (err) {
+      console.error("firebase sign-out failed:", err);
+    }
     await fetch("/api/auth/logout", { method: "POST" });
     dispatch(clearMe()); // redux action dispatch to forget the user
     router.push("/login");
@@ -108,19 +118,21 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             </div>
           </div>
 
-          {/* medium size right size right side */}
-          <div className="hidden items-center gap-4 md:flex">
-            <span className="text-sm text-muted-foreground">Hi, {me.username}</span>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              Logout
+          {/* right side: the bell is visible at every width */}
+          <div className="flex items-center gap-2 md:gap-4">
+            <NotificationBell />
+            {/* medium size right size right side */}
+            <div className="hidden items-center gap-4 md:flex">
+              <span className="text-sm text-muted-foreground">Hi, {me.username}</span>
+              <Button variant="outline" size="sm" onClick={handleLogout}>
+                Logout
+              </Button>
+            </div>
+            {/* phone size hamburger button */}
+            <Button variant="ghost" size="icon" className="md:hidden" onClick={(e) => setOpen(true)}>
+              <Menu />
             </Button>
           </div>
-
-
-          {/* phone size hamburger button */}
-          <Button variant="ghost" size="icon" className="md:hidden" onClick={(e) => setOpen(true)}>
-            <Menu />
-          </Button>
         </nav>
       </header>
 

@@ -41,10 +41,34 @@ definitions:
         type: integer
       service_id:
         type: integer
+      service_name:
+        description: |-
+          only filled by GetMyBookingsPage (JOIN on services), so a deleted service still shows its name.
+          omitempty: other responses (create, confirm, cancel) just leave it out
+        type: string
       status:
         type: string
       user_id:
         type: integer
+    type: object
+  booking.BookingDetail:
+    properties:
+      booking_date:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      service_id:
+        type: integer
+      service_name:
+        type: string
+      status:
+        type: string
+      user_id:
+        type: integer
+      username:
+        type: string
     type: object
   booking.BookingRequest:
     properties:
@@ -60,6 +84,19 @@ definitions:
         type: string
       message:
         type: string
+    type: object
+  booking.MyBookingPage:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/booking.Booking'
+        type: array
+      limit:
+        type: integer
+      page:
+        type: integer
+      total:
+        type: integer
     type: object
 host: localhost:3001
 info:
@@ -102,7 +139,8 @@ paths:
         in: query
         name: order
         type: string
-      - description: Comma-separated statuses, e.g. pending,confirmed
+      - description: Comma-separated statuses (pending, confirmed, cancelled, rejected),
+          e.g. pending,confirmed
         in: query
         name: status
         type: string
@@ -180,6 +218,195 @@ paths:
           schema:
             $ref: '#/definitions/booking.ErrorResponse'
       summary: Book a service for a date
+      tags:
+      - bookings
+  /bookings/{id}:
+    get:
+      description: A booking with the user's and service's names. Admins can see any
+        booking; a user only their own (otherwise 404, so we don't reveal that it
+        exists).
+      parameters:
+      - description: Booking id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/booking.BookingDetail'
+        "400":
+          description: invalid booking id
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "404":
+          description: not found (or not yours)
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+      summary: One booking (detail page)
+      tags:
+      - bookings
+  /bookings/{id}/cancel:
+    post:
+      description: pending → cancelled. Only the owner, and only while pending. Confirmed,
+        rejected or someone else's booking gives 409.
+      parameters:
+      - description: Booking id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/booking.Booking'
+        "400":
+          description: invalid booking id
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "409":
+          description: not found, not yours, or not pending
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+      summary: Cancel my booking
+      tags:
+      - bookings
+  /bookings/{id}/confirm:
+    post:
+      description: pending → confirmed. Admin only. Any other status gives 409.
+      parameters:
+      - description: Booking id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/booking.Booking'
+        "400":
+          description: invalid booking id
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "403":
+          description: not an admin
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "409":
+          description: not found or not pending
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+      summary: Approve a booking (admin)
+      tags:
+      - bookings
+  /bookings/{id}/reject:
+    post:
+      description: pending → rejected. Admin only. Any other status gives 409. A rejected
+        booking frees the date.
+      parameters:
+      - description: Booking id
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/booking.Booking'
+        "400":
+          description: invalid booking id
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "403":
+          description: not an admin
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "409":
+          description: not found or not pending
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+      summary: Reject a booking (admin)
+      tags:
+      - bookings
+  /bookings/me:
+    get:
+      description: 'One page of the logged-in user''s bookings, with the service name.
+        Default order: booking date, newest first.'
+      parameters:
+      - default: 1
+        description: Page number
+        in: query
+        name: page
+        type: integer
+      - default: 10
+        description: Rows per page (max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Sort column
+        enum:
+        - booking_date
+        - service_name
+        - status
+        - created_at
+        in: query
+        name: sort
+        type: string
+      - description: Sort direction
+        enum:
+        - asc
+        - desc
+        in: query
+        name: order
+        type: string
+      - description: Comma-separated statuses (pending, confirmed, cancelled, rejected)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/booking.MyBookingPage'
+        "401":
+          description: not logged in
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/booking.ErrorResponse'
+      summary: List my bookings (My Bookings table)
       tags:
       - bookings
 swagger: "2.0"

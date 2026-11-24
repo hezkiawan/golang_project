@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 
+	firebase "firebase.google.com/go/v4"
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -29,9 +30,23 @@ func main() {
 
 	authMiddleware := middleware.AuthMiddleware(secret)
 
+	// FIREBASE: same setup as the notification service. The key file comes from
+	// GOOGLE_APPLICATION_CREDENTIALS; we need it to sign Firebase custom tokens.
+	firebaseApp, err := firebase.NewApp(context.Background(), &firebase.Config{
+		ProjectID: os.Getenv("FIREBASE_PROJECT_ID"),
+	})
+	if err != nil {
+		log.Fatal("firebase init: ", err)
+	}
+	firebaseAuth, err := firebaseApp.Auth(context.Background())
+	if err != nil {
+		log.Fatal("firebase auth init: ", err)
+	}
+
 	handler := user.UserHandler{
-		Repo:      user.NewUserRepository(pool), // was: DB: pool
-		JWTSecret: secret,
+		Repo:         user.NewUserRepository(pool), // was: DB: pool
+		JWTSecret:    secret,
+		FirebaseAuth: firebaseAuth,
 	}
 
 	// create fiber app
