@@ -1,25 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react"
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RowsSkeleton } from "@/components/loading-skeletons";
-import { useAppDispatch, useAppSelector } from "@/lib/hooks";
-import { setMe, clearMe } from "@/lib/features/auth/authSlice";
-import { signInToFirebase, signOutOfFirebase } from "@/lib/firebase";
+import { useSession } from "@/lib/use-session";
 import NotificationBell from "@/components/notification-bell";
-
-// User struct
-type Me = {
-  user_id: number;
-  username: string;
-  email: string;
-  role: string;
-};
 
 const links = [
   { href: "/", label: "Services" },
@@ -27,45 +17,15 @@ const links = [
 ];
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
   const pathname = usePathname();
-  // const [me, setMe] = useState<Me | null>(null); -> no longer uses useState
-  const me = useAppSelector((state) => state.auth.me); // read from the store
-  const dispatch = useAppDispatch();                    // to send actions
+  // session check (asks the backend who is logged in) + logout, shared with the admin layout
+  const { me, loggingOut, logout } = useSession("user");
 
   const [open, setOpen] = useState(false);
 
-  // ketika page di main dibuka tanya backend siapa yang log in
-  useEffect(() => {
-    fetch("/api/auth/me").then(async (res) => {
-      if (!res.ok) {
-        // if not logged it -> route to /login page 
-        router.push("/login");
-        return;
-      }
-      const data = await res.json();
-      if (data.role === "admin") {
-        router.push("/admin/services");
-        return;
-      }
-      dispatch(setMe(data)); // uses redux
-      // also sign in to Firebase (for the live notification bell). If it fails,
-      // the rest of the app still works, so we only log the error.
-      signInToFirebase(data.user_id).catch((err) => console.error("firebase sign-in failed:", err));
-    });
-  }, []);
-
-  async function handleLogout() {
-    setOpen(false);
-    // sign out of Firebase first, so the bell's listeners stop right away
-    try {
-      await signOutOfFirebase();
-    } catch (err) {
-      console.error("firebase sign-out failed:", err);
-    }
-    await fetch("/api/auth/logout", { method: "POST" });
-    dispatch(clearMe()); // redux action dispatch to forget the user
-    router.push("/login");
+  function handleLogout() {
+    setOpen(false); // close the mobile drawer
+    logout();
   }
 
   // link berubah jadi medium font
@@ -124,8 +84,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             {/* medium size right size right side */}
             <div className="hidden items-center gap-4 md:flex">
               <span className="text-sm text-muted-foreground">Hi, {me.username}</span>
-              <Button variant="outline" size="sm" onClick={handleLogout}>
-                Logout
+              <Button variant="outline" size="sm" onClick={handleLogout} disabled={loggingOut}>
+                {loggingOut ? "Logging out…" : "Logout"}
               </Button>
             </div>
             {/* phone size hamburger button */}
@@ -155,8 +115,8 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
           {/* footer */}
           <SheetFooter className="border-t">
             <p className="text-sm text-muted-foreground">Signed in as {me.username}</p>
-            <Button variant="outline" className="w-full" onClick={handleLogout}>
-              Logout
+            <Button variant="outline" className="w-full" onClick={handleLogout} disabled={loggingOut}>
+              {loggingOut ? "Logging out…" : "Logout"}
             </Button>
           </SheetFooter>
         </SheetContent>

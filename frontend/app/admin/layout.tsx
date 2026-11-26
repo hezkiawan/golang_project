@@ -1,23 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Menu } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RowsSkeleton } from "@/components/loading-skeletons";
-import { useAppDispatch, useAppSelector } from "@/lib/hooks";
-import { setMe, clearMe } from "@/lib/features/auth/authSlice";
-import { signInToFirebase, signOutOfFirebase } from "@/lib/firebase";
+import { useSession } from "@/lib/use-session";
 import NotificationBell from "@/components/notification-bell";
-
-type Me = {
-    user_id: number;
-    username: string;
-    role: string;
-};
 
 const links = [
     { href: "/admin/services", label: "Services" },
@@ -26,29 +18,10 @@ const links = [
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-    const router = useRouter();
     const pathname = usePathname();
-    const me = useAppSelector((state) => state.auth.me); // read from the store
-    const dispatch = useAppDispatch();                    // to send actions
+    // session check (asks the backend who is logged in) + logout, shared with the main layout
+    const { me, loggingOut, logout } = useSession("admin");
     const [open, setOpen] = useState(false);
-
-    useEffect(() => {
-        fetch("/api/auth/me").then(async (res) => {
-            if (!res.ok) {
-                router.push("/login"); // not logged in
-                return;
-            }
-            const data = await res.json();
-            if (data.role !== "admin") {
-                router.push("/"); // logged in, but not an admin
-                return;
-            }
-            dispatch(setMe(data));
-            // also sign in to Firebase (for the live notification bell). If it fails,
-            // the rest of the app still works, so we only log the error.
-            signInToFirebase(data.user_id).catch((err) => console.error("firebase sign-in failed:", err));
-        });
-    }, []);
 
     function linkClass(href: string) {
         return pathname === href ? "text-sm font-medium text-foreground" : "text-sm text-muted-foreground hover:text-foreground";
@@ -60,16 +33,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             : "rounded-md px-3 py-3 text-base text-muted-foreground hover:bg-muted hover:text-foreground";
     }
 
-    async function handleLogout() {
-        // sign out of Firebase first, so the bell's listeners stop right away
-        try {
-          await signOutOfFirebase();
-        } catch (err) {
-          console.error("firebase sign-out failed:", err);
-        }
-        await fetch("/api/auth/logout", { method: "POST" });
-        dispatch(clearMe()); // redux action dispatch to forget the user
-        router.push("/login");
+    function handleLogout() {
+        setOpen(false); // close the mobile drawer
+        logout();
     }
 
 
@@ -116,8 +82,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         {/* medium size right size right side */}
                         <div className="hidden items-center gap-4 md:flex">
                             <span className="text-sm text-muted-foreground">Hi, {me.username}</span>
-                            <Button variant="outline" size="sm" onClick={handleLogout}>
-                                Logout
+                            <Button variant="outline" size="sm" onClick={handleLogout} disabled={loggingOut}>
+                                {loggingOut ? "Logging out…" : "Logout"}
                             </Button>
                         </div>
                         {/* phone size hamburger button */}
@@ -147,8 +113,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     {/* footer */}
                     <SheetFooter className="border-t">
                         <p className="text-sm text-muted-foreground">Signed in as {me.username}</p>
-                        <Button variant="outline" className="w-full" onClick={handleLogout}>
-                            Logout
+                        <Button variant="outline" className="w-full" onClick={handleLogout} disabled={loggingOut}>
+                            {loggingOut ? "Logging out…" : "Logout"}
                         </Button>
                     </SheetFooter>
                 </SheetContent>
