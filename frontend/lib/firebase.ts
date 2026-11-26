@@ -27,11 +27,11 @@ export function firestoreDb(): Firestore {
   return getFirestore(getFirebaseApp());
 }
 
-// true once the browser starts leaving the page (a full navigation or closing the tab).
-// Requests that get cut off then are not real errors, so we don't report them.
 let pageIsUnloading = false;
+// apakah kita inside the browser
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", () => {
+    //leaving page
     pageIsUnloading = true;
   });
   // coming back from the back/forward cache: the page is alive again
@@ -54,6 +54,7 @@ export function signInToFirebase(userId: number): Promise<void> {
     return pendingSignIn.promise;
   }
 
+  //If someone else is still signing in...wait.
   // A sign-in for a different user is still running: wait for it to finish first,
   // so it cannot finish last and leave the wrong user signed in.
   const previous = pendingSignIn !== null ? pendingSignIn.promise.catch(() => {}) : Promise.resolve();

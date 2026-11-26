@@ -21,47 +21,37 @@ func main() {
 		log.Fatal("Error loading .env: ", err)
 	}
 
-	// create postgres connection
-
+	// create postgres connection - butuh untuk query admin id
 	pool, err := pgxpool.New(
 		context.Background(),
 		"postgres://homefix:homefix@localhost:5435/homefix?sslmode=disable",
 	)
-
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	defer pool.Close()
 	if err := pool.Ping(context.Background()); err != nil {
 		log.Fatal(err)
 	}
-
 	repo := notification.NewNotificationRepository(pool)
 
 	// create the amqp connection
 	amqpConn, err := amqp.Dial(
 		"amqp://homefix:homefix@localhost:5672/",
 	)
-
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	defer amqpConn.Close()
 
 	// create amqp channel
-
 	channel, err := amqpConn.Channel()
-
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	defer channel.Close()
 
-	// for the consumer we must declare the queue too same with producer
-
+	// create the queue for the consumer we must declare the queue too same with producer
 	_, err = channel.QueueDeclare(
 		"booking.created",
 		true,
@@ -70,7 +60,6 @@ func main() {
 		false,
 		nil,
 	)
-
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -84,7 +73,6 @@ func main() {
 		false,
 		nil,
 	)
-
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -98,12 +86,11 @@ func main() {
 		false,
 		nil,
 	)
-
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// FIREBASE: the Admin SDK reads the service-account key from GOOGLE_APPLICATION_CREDENTIALS (set in .env).
+	// FIREBASE: the Admin SDK reads the service-account key from GOOGLE_APPLICATION_CREDENTIALS
 	// FIREBASE_PROJECT_ID makes the project explicit; if it is empty the SDK takes it from the key file
 	firebaseApp, err := firebase.NewApp(context.Background(), &firebase.Config{
 		ProjectID: os.Getenv("FIREBASE_PROJECT_ID"),
@@ -112,6 +99,7 @@ func main() {
 		log.Fatal("firebase init: ", err)
 	}
 
+	// Initialize Firestore Client
 	firestoreClient, err := firebaseApp.Firestore(context.Background())
 	if err != nil {
 		log.Fatal("firestore init: ", err)

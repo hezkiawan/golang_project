@@ -16,11 +16,11 @@ type FirestoreStore struct {
 	Client *firestore.Client
 }
 
-// one document, the fields the frontend expects
+// create one document
 func newNotificationDoc(recipientID int64, kind string, bookingID int64, title string, body string) map[string]any {
 	return map[string]any{
 		"recipientId": strconv.FormatInt(recipientID, 10), // a string, so it matches request.auth.uid in the rules
-		"type":        kind,                                // "booking_created" | "booking_reviewed" | "booking_cancelled"
+		"type":        kind,                               // "booking_created" | "booking_reviewed" | "booking_cancelled"
 		"bookingId":   bookingID,
 		"title":       title,
 		"body":        body,

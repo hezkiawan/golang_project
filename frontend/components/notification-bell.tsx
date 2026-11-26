@@ -91,7 +91,7 @@ function bookingPath(isAdmin: boolean, bookingId: number): string {
   return isAdmin ? `/admin/bookings/${bookingId}` : `/bookings/${bookingId}`;
 }
 
-// A browser notification opens e.g. "/bookings/5?notification=abc".
+// A browser notification opens cth"/bookings/5?notification=abc".
 // Split that into the page to show ("/bookings/5") and the notification id ("abc").
 function splitNotificationUrl(url: string): { path: string; notificationId: string | null } {
   const parsed = new URL(url, window.location.origin);
@@ -111,22 +111,21 @@ async function markNotificationRead(notificationId: string) {
 }
 
 export default function NotificationBell() {
-  const me = useAppSelector((state) => state.auth.me);
+  const me = useAppSelector((state) => state.auth.me); // login / redux
   const router = useRouter();
 
   // uid of whoever is signed in to Firebase right now (null = nobody)
-  const [firebaseUid, setFirebaseUid] = useState<string | null>(null);
+  const [firebaseUid, setFirebaseUid] = useState<string | null>(null); // firebase login
 
-  const [open, setOpen] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [items, setItems] = useState<NotificationItem[]>([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [pageLimit, setPageLimit] = useState(PAGE_SIZE);
-  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false); //pop over open
+  const [unreadCount, setUnreadCount] = useState(0); // badge number (query 1)
+  const [items, setItems] = useState<NotificationItem[]>([]); // notification list (query 2)
+  const [hasMore, setHasMore] = useState(false); // show "load more"
+  const [pageLimit, setPageLimit] = useState(PAGE_SIZE); //how many to show
+  const [loading, setLoading] = useState(true); // skeleton
   const [error, setError] = useState("");
-  const [marking, setMarking] = useState(false);
-  // "now" for the relative timestamps, refreshed while the dropdown is open
-  const [now, setNow] = useState(() => Date.now());
+  const [marking, setMarking] = useState(false); // mark all
+  const [now, setNow] = useState(() => Date.now()); // x min ago,  refreshed while the dropdown is open
   // browser notification permission ("unsupported" until we have checked in the browser)
   const [permission, setPermission] = useState<BrowserPermission>("unsupported");
 
@@ -158,8 +157,7 @@ export default function NotificationBell() {
   const ready = myUid !== null && firebaseUid === myUid;
   const isAdmin = me?.role === "admin";
 
-  // live query 1: all my unread notifications → the number on the badge.
-  // Its own effect, so "Load more" (which changes pageLimit) does not restart it.
+  // QUERY 1 -  all my unread notifications → the number on the badge.
   useEffect(() => {
     if (!ready || myUid === null) {
       return;
@@ -169,7 +167,7 @@ export default function NotificationBell() {
       collection(firestoreDb(), "notifications"),
       where("recipientId", "==", myUid),
       where("read", "==", false)
-    );
+    );  
     const stopUnread = onSnapshot(
       unreadQuery,
       (snapshot) => setUnreadCount(snapshot.size),
@@ -210,6 +208,7 @@ export default function NotificationBell() {
         const list: NotificationItem[] = snapshot.docs.slice(0, pageLimit).map((d) => {
           // "estimate" = never null, even while a server timestamp is still being written
           const data = d.data({ serverTimestamps: "estimate" });
+          // mapping each document to react component
           return {
             id: d.id,
             bookingId: data.bookingId,

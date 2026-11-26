@@ -16,7 +16,7 @@ type Consumer struct {
 	Firestore *FirestoreStore
 }
 
-// a message we can never handle (bad JSON). Retrying won't help, so we drop it
+// own error type - a message we can never handle (bad JSON). Retrying won't help, so we drop it
 var errBadMessage = errors.New("bad message")
 
 // start the queue listeners (each one runs in its own goroutine)

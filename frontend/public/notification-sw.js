@@ -30,7 +30,7 @@ async function openApp(url) {
   const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
   const appWindow = windows.find((client) => new URL(client.url).origin === self.location.origin);
 
-  // no tab of the app is open → open a new one
+  // no tab of the app is open -> open a new one
   if (!appWindow) {
     await self.clients.openWindow(url);
     return;
