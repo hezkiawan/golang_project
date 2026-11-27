@@ -165,7 +165,7 @@ export function BookingDetail({ id, isAdmin }: { id: string; isAdmin: boolean })
                     className={
                         isError
                             ? "rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
-                            : "rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800"
+                            : "rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-300"
                     }
                 >
                     {message}

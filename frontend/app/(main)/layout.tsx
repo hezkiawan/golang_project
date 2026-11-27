@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { RowsSkeleton } from "@/components/loading-skeletons";
 import { useSession } from "@/lib/use-session";
 import NotificationBell from "@/components/notification-bell";
+import ThemeToggle from "@/components/theme-toggle";
 
 const links = [
   { href: "/", label: "Services" },
@@ -47,7 +48,10 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         <header className="border-b">
           <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
             <Skeleton className="h-6 w-24" />           {/* title skeleton*/}
-            <Skeleton className="h-8 w-8 md:w-40" />    {/* navbar skeleton */}
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <Skeleton className="h-8 w-8 md:w-40" />    {/* navbar skeleton */}
+            </div>
           </div>
         </header>
         <main className="mx-auto max-w-5xl space-y-4 px-4 py-6 sm:px-6 sm:py-8">
@@ -80,6 +84,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
           {/* right side: the bell is visible at every width */}
           <div className="flex items-center gap-2 md:gap-4">
+            <ThemeToggle />
             <NotificationBell />
             {/* medium size right size right side */}
             <div className="hidden items-center gap-4 md:flex">

@@ -74,7 +74,7 @@ export default function HomePage() {
       setIsError(false);
       setMessage("Booking #" + created.id + " created (pending). Go to My Bookings to confirm it.");
       setBookedIds([...bookedIds, serviceId]);
-      
+
     } catch (err) {
       setIsError(true);
       setMessage(err as string);
@@ -102,7 +102,7 @@ export default function HomePage() {
           className={
             isError
               ? "mb-6 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive"
-              : "mb-6 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800"
+              : "mb-6 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:border-green-900 dark:bg-green-950 dark:text-green-300"
           }
         >
           {message}
